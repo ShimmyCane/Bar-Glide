@@ -12,7 +12,7 @@ Purpose: an arcade bar game in the spirit of the early-80s bartender games Jimmy
 - Track: A. Family play (with a late-night arcade mood by default; pastel day room in ⚙️). The player is Jimmy himself.
 - Database: Family project (`twvqvutrcobedvuhnzxq`), tables `bglide_scores`, `bglide_notes`. SQL in `supabase/` (`test_001`, `001`, `verify_001`). Tables are live (checked 2026-11-21); notes are read and marked done with `/review-notes-and-update`.
 
-How to run: open `index.html` (no build step). Files: `js/config.js` (version, changelog, database URL and publishable key), `js/sprites.js` (vector people, text helper, room themes; the pixel original is archived in `v1/`, linked from ⚙️ → Pages), `js/sound.js` (Web Audio), `js/game.js` (the game, `window.BarGlide`, debug hooks for tests), `js/app.js` (controls, ⚙️, notes, scores, database), `css/style.css`. Shifts are the `SHIFTS` table at the top of `js/game.js`. `synth.html` is the Sound lab (a Web Audio synthesizer, linked from ⚙️ → Pages).
+How to run: open `index.html` (no build step). Files: `js/config.js` (version, changelog, database URL and publishable key), `js/sprites.js` (pixel sprites with automatic light and dark edges, the 3x5 font, room themes; the earlier version 0.4.0 is archived in `v1/`, linked from ⚙️ → Pages). Art stays pixel: no vector shapes., `js/sound.js` (Web Audio), `js/game.js` (the game, `window.BarGlide`, debug hooks for tests), `js/app.js` (controls, ⚙️, notes, scores, database), `css/style.css`. Shifts are the `SHIFTS` table at the top of `js/game.js`. `synth.html` is the Sound lab (a Web Audio synthesizer, linked from ⚙️ → Pages).
 
 Rules:
 - Don't copy the original arcade game's name, characters, art or music. Keep everything drawn here.

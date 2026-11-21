@@ -27,4 +27,5 @@
 - Score read: 1 saved score (JIM, round 8, v0.3.0). Tables are live in the Family project.
 - [x] Answered convo v0.5: events start at Lunch (0.5.0), escorted guests do not count (0.5.0), helper score stays, sound lab not yet.
 - [x] Pixel original archived as `v1/` (link in ⚙️ → Pages). Modern look in 0.5.0.
-- [ ] Jimmy to play 0.5.0 on the iPad: does the modern look feel right? (convo v0.6 when ready)
+- [x] 0.5.0 vector look rejected: art stays pixel (Jimmy, 2026-11-21). 0.6.0 is richer pixel art.
+- [ ] Jimmy to play 0.6.0 on the iPad: is the pixel art rich enough? What next (animated customers, more rooms)?
