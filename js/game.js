@@ -13,7 +13,17 @@
   const PUSH_DIST = 46;     // how far a customer slides back when they catch a mug
   const PUSH_SPEED = 90;
 
-  const cfg = { start: 1, speed: 1, glasses: 3, ending: 'spank', theme: 'saloon' };
+  const cfg = { start: 1, speed: 1, glasses: 3, ending: 'spank', theme: 'saloon', glass: 1, events: 2 };
+  // One saloon door at the top left; guests walk down the walkway, then turn onto their bar (notes of 11-10 and 11-16).
+  const DOOR_TOP = 22;      // top of the door leaves
+  const ENTRY_Y = 40;       // feet line of a guest standing in the doorway
+  const ENTER_X = 8;        // where guests walk down the walkway
+  const EXIT_X = 18;        // where guests walk down when they leave
+  const ENTER_SPEED = 40;   // px/s down the walkway
+  const LEAVE_SPEED = 90;   // px/s along the bar towards the walkway
+  const EXIT_SPEED = 60;    // px/s down the walkway
+  // Bonus events (convo v0.4): seconds between events for each ⚙️ level (1 rare ... 4 lots), blurred by chance.
+  const EVENT_GAPS = [0, 70, 45, 30, 18];
   let lanes = 2;            // bars open now: set by the shift
   // A day at the bar (convo v0.2). Each round is a shift; after Night the nights keep getting faster.
   //   bars: bars open · speed: how fast customers walk · total: customers in the shift · gap: seconds between arrivals
@@ -43,9 +53,10 @@
   let timer = 0, clock = 0;
   let score = 0, best = 0, lives = 3;
   let round = null;
-  let customers = [], mugs = [], parts = [], pops = [], doors = [];
+  let customers = [], mugs = [], parts = [], pops = [], doorOpen = 0;
   let bt = null, oops = null, boss = null;
   let tips = [], dash = null, show = 0, bonus = null;
+  let ev = null, evT = 0;   // the bonus event now playing, and the countdown to the next one
   const TIP_CHANCE = 0.22;  // chance a customer leaves a coin when they catch a mug
   const SHOW_TIME = 3.5;    // seconds the customers stop to watch the show
 
@@ -55,7 +66,6 @@
     const top = { 2: 86, 3: 74, 4: 64 }[n] || 64, gap = { 2: 54, 3: 44, 4: 34 }[n] || 34;
     lanesY = [];
     for (let i = 0; i < n; i++) lanesY.push(top + i * gap);
-    doors = lanesY.map(() => 0);
   }
 
   function buildBackground() {
@@ -102,14 +112,14 @@
       x.fillStyle = (fx / 8) % 2 ? T.floorA : T.floorB;
       x.fillRect(fx, 186, 8, 14);
     }
-    // A doorway at the left end of each bar, with a bit of night sky.
-    lanesY.forEach(y => {
-      const top = y - 26;
-      x.fillStyle = T.ink; x.fillRect(2, top - 2, 30, 42);
-      x.fillStyle = T.night; x.fillRect(4, top, 26, 38);
-      x.fillStyle = T.star; x.fillRect(9, top + 4, 1, 1); x.fillRect(22, top + 9, 1, 1); x.fillRect(15, top + 2, 1, 1);
-      x.fillStyle = T.doorway; x.fillRect(4, top + 22, 26, 16);
-    });
+    // One doorway at the top left, with a bit of night sky, and a walkway down to every bar.
+    x.fillStyle = T.ink; x.fillRect(2, DOOR_TOP - 2, 30, 22);
+    x.fillStyle = T.night; x.fillRect(4, DOOR_TOP, 26, 18);
+    x.fillStyle = T.star; x.fillRect(9, DOOR_TOP + 3, 1, 1); x.fillRect(22, DOOR_TOP + 6, 1, 1); x.fillRect(15, DOOR_TOP + 1, 1, 1);
+    x.fillStyle = T.ink; x.fillRect(2, DOOR_TOP + 20, 30, 166 - DOOR_TOP);
+    x.fillStyle = T.floorB; x.fillRect(4, DOOR_TOP + 20, 26, 166 - DOOR_TOP);
+    x.fillStyle = T.floorA;
+    for (let wy = DOOR_TOP + 22; wy < 184; wy += 8) { x.fillRect(5, wy, 6, 2); x.fillRect(16, wy + 4, 6, 2); x.fillRect(25, wy, 4, 2); }
     bg = c;
 
     // One bar, drawn once and reused for every lane.
@@ -147,7 +157,7 @@
     score = 0; lives = cfg.glasses;
     customers = []; mugs = []; parts = []; pops = [];
     bt = { lane: 0, fill: 0, holding: false, throwT: 0, shake: 0 };
-    oops = null; boss = null;
+    oops = null; boss = null; ev = null;
     startRound(cfg.start);
   }
 
@@ -156,7 +166,7 @@
     round = { n, shift, total: shift.total, spawned: 0, served: 0, spawnT: 1.2, t: 0 };
     if (shift.bars !== lanes) { lanes = shift.bars; applyConfig(); }
     if (bt) bt.lane = Math.min(bt.lane, lanes - 1);
-    customers = []; mugs = []; tips = []; dash = null; show = 0; bonus = null;
+    customers = []; mugs = []; tips = []; dash = null; show = 0; bonus = null; ev = null; evT = nextEventGap(1.3);
     if (bt) { bt.holding = false; bt.fill = 0; }
     setState('ready', 1.6);
   }
@@ -181,7 +191,7 @@
   }
   function walkSpeed() { return 11 * round.shift.speed * ramp() * cfg.speed; }
   function spawnGap() { return round.shift.gap / ramp() / cfg.speed; }
-  function emptySpeed() { return (8 + 30 * round.shift.speed) * cfg.speed; }
+  function emptySpeed() { return (8 + 30 * round.shift.speed) * cfg.speed * cfg.glass; }   // ⚙️ slider: how fast empties come back
 
   // ---------- input ----------
   function move(lane) {
@@ -227,7 +237,7 @@
   }
 
   function update(dt) {
-    doors = doors.map(d => Math.max(0, d - dt * 3));
+    doorOpen = Math.max(0, doorOpen - dt * 3);
     parts = parts.filter(p => {
       p.life -= dt; p.vy += (p.g || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt;
       if (p.floor && p.y > p.floor) { p.y = p.floor; p.vy *= -0.3; p.vx *= 0.6; }
@@ -256,26 +266,36 @@
       if (Math.floor(before * 6) !== Math.floor(bt.fill * 6)) BG.sound.play('pour', bt.fill);
     }
 
-    // New customers.
+    // New customers: they step in at the saloon door, one at a time, and choose a bar.
     round.t += dt;
-    round.spawnT -= dt;
-    if (round.spawned < round.total && round.spawnT <= 0) {
-      const counts = lanesY.map((_, i) => customers.filter(c => c.lane === i).length);
-      const open = lanesY.map((_, i) => i).filter(i => counts[i] < 3 && !customers.some(c => c.lane === i && c.x < 14));
-      if (open.length) {
+    const frozen = !!(ev && ev.freeze);
+    if (!frozen) round.spawnT -= dt;
+    if (round.spawned < round.total && round.spawnT <= 0 && !frozen) {
+      const counts = lanesY.map((_, i) => customers.filter(c => c.lane === i && c.state !== 'leave').length);
+      const doorFree = !customers.some(c => c.state === 'enter' && c.fy < ENTRY_Y + 18);
+      const open = lanesY.map((_, i) => i).filter(i => counts[i] < 3 && !customers.some(c => c.lane === i && !c.vert && c.x < 24 && c.state !== 'leave'));
+      if (open.length && doorFree) {
         const lane = open[Math.floor(Math.random() * open.length)];
-        customers.push({ lane, x: -14, state: 'walk', t: 0.6 + Math.random() * 0.6, kind: Math.floor(Math.random() * 5), push: 0, bob: 0,
-          wants: Math.random() < round.shift.two ? 2 : 1, extra: 0 });
-        doors[lane] = 1;
+        customers.push({ lane, x: ENTER_X, fy: ENTRY_Y, vert: true, state: 'enter', t: 0, kind: Math.floor(Math.random() * 5), push: 0, bob: 0,
+          wants: Math.random() < round.shift.two ? 2 : 1 });
+        doorOpen = 1;
         round.spawned++;
-      }
-      round.spawnT = spawnGap() * (0.6 + Math.random() * 0.8);
+        round.spawnT = spawnGap() * (0.6 + Math.random() * 0.8);
+      } else if (!open.length) round.spawnT = spawnGap() * (0.6 + Math.random() * 0.8);
+      else round.spawnT = 0.3;
     }
 
-    // Customers walk in steps toward the bartender.
+    // The bonus events (dancer, fight, celebration, a helper's break).
+    updateEvents(dt);
+
+    // Customers walk in steps toward the bartender, but only once they are at their bar.
     for (const c of customers) {
-      if (show > 0 && (c.state === 'walk' || c.state === 'pause')) { c.bob += dt * 2; continue; }   // watching the show
-      if (c.state === 'walk') {
+      const onBar = !c.vert && (c.state === 'walk' || c.state === 'pause');
+      if (onBar && (show > 0 || (ev && (ev.freeze || ev.hold === c.lane)))) { c.bob += dt * 2; continue; }   // watching
+      if (c.state === 'enter') {                 // down the walkway, then turn onto the bar
+        c.fy += ENTER_SPEED * cfg.speed * dt; c.bob += dt * 1.5;
+        if (c.fy >= lanesY[c.lane]) { c.vert = false; c.state = 'walk'; c.t = 0.4; }
+      } else if (c.state === 'walk') {
         c.x += walkSpeed() * dt; c.bob += dt; c.t -= dt;
         if (c.t <= 0) { c.state = 'pause'; c.t = 0.5 + Math.random() * 0.6; }
         if (c.x + 11 >= BAR_X1 - 2) return strike('grumpy', c.lane, c.x + 10, lanesY[c.lane] - 8, c);
@@ -283,18 +303,26 @@
         c.t -= dt; if (c.t <= 0) { c.state = 'walk'; c.t = 0.7 + Math.random() * 0.6; }
       } else if (c.state === 'pushed') {
         const step = PUSH_SPEED * dt;
-        c.x -= step; c.push -= step;
-        if (c.x + 12 < BAR_X0 - 6) { c.gone = true; score += 50; round.served++; doors[c.lane] = 1; BG.sound.play('serve'); pop('+50', c.x + 20, lanesY[c.lane] - 18); }
-        else if (c.push <= 0) {
-          if (c.wants > 0) { c.state = 'pause'; c.t = 0.3; }        // still waiting for the second mug
-          else { c.state = 'drink'; c.t = 1.3; BG.sound.play('gulp'); }
-        }
+        c.x = Math.max(ENTER_X + 2, c.x - step); c.push -= step;
+        if (c.push <= 0 || c.x <= ENTER_X + 2) { c.state = 'drink'; c.t = 1.3; BG.sound.play('gulp'); }
       } else if (c.state === 'drink') {
         c.t -= dt;
         if (c.t <= 0) {
-          mugs.push({ lane: c.lane, x: c.x + 12, full: false });
-          if (c.extra > 0) { c.extra--; c.t = 1.0; BG.sound.play('gulp'); }   // drinks the second one too
-          else { c.state = 'pause'; c.t = 0.4; }
+          mugs.push({ lane: c.lane, x: c.x + 12, full: false });     // the empty comes back; it is not a new order until then
+          if (c.wants > 0) { c.state = 'pause'; c.t = 0.4; }          // wants another: comes back for it, X2 gone
+          else { c.state = 'leave'; c.t = 0; }                         // had their fill: heads out
+        }
+      } else if (c.state === 'leave') {
+        c.bob += dt * 2;
+        if (!c.vert) {
+          c.x -= LEAVE_SPEED * dt;
+          if (c.x <= EXIT_X) {
+            c.x = EXIT_X; c.vert = true; c.fy = lanesY[c.lane];
+            if (!c.escorted) { score += 50; round.served++; BG.sound.play('serve'); pop('+50', 24, lanesY[c.lane] - 18); }
+          }
+        } else {
+          c.fy += EXIT_SPEED * dt;
+          if (c.fy > H + 18) c.gone = true;
         }
       }
     }
@@ -305,31 +333,32 @@
       if (m.full) {
         m.x -= FULL_SPEED * cfg.speed * dt;
         const catcher = customers
-          .filter(c => c.lane === m.lane && (c.state === 'walk' || c.state === 'pause') && c.x - 4 <= m.x && (c.x + 11 >= m.x || m.x <= BAR_X0 + 2))
+          .filter(c => c.lane === m.lane && !c.vert && (c.state === 'walk' || c.state === 'pause') && c.x - 4 <= m.x && (c.x + 11 >= m.x || m.x <= BAR_X0 + 2))
           .sort((a, b) => b.x - a.x)[0];
         if (catcher) {
           m.gone = true; score += 10;
           BG.sound.play('catch');
-          catcher.wants = (catcher.wants || 1) - 1;
-          if (catcher.wants > 0) {           // ordered two: holds this one and waits for the next
-            catcher.extra = (catcher.extra || 0) + 1; catcher.state = 'pushed'; catcher.push = 12;
-            pop('ONE MORE!', catcher.x + 6, lanesY[m.lane] - 22, true, 0.9);
-          } else { catcher.state = 'pushed'; catcher.push = PUSH_DIST; }
+          catcher.wants = Math.max(0, (catcher.wants || 1) - 1);    // one drink down; the next waits until they finish this one
+          catcher.state = 'pushed'; catcher.push = PUSH_DIST;
           if (Math.random() < TIP_CHANCE && !tips.some(t => t.lane === m.lane) && catcher.x > BAR_X0 + 6) {
             tips.push({ lane: m.lane, x: Math.round(catcher.x + 4), t: 7 });
             pop('TIP!', catcher.x + 6, lanesY[m.lane] - 20);
           }
         } else if (m.x < BAR_X0 - 2) {
+          if (m.helper) { m.gone = true; continue; }          // a helper's mug that found nobody is no strike
           return strike('missed', m.lane, BAR_X0 - 4, lanesY[m.lane] - 7, null, -1);
         }
       } else {
         const edge = BAR_X1 - 6;
         if (m.x < edge) m.x = Math.min(edge, m.x + emptySpeed() * dt);
         const here = bt.lane === m.lane && !dash;
-        if (here && m.x >= edge - emptySpeed() * CATCH_EARLY) {
+        const helped = helperOn(m.lane);
+        if (helped && m.x >= edge) {
+          m.gone = true; score += 10; BG.sound.play('catch'); pop('+10', BAR_X1 - 4, lanesY[m.lane] - 14);
+        } else if (here && m.x >= edge - emptySpeed() * CATCH_EARLY) {
           m.gone = true; score += 25; BG.sound.play('catch'); pop(m.teeter ? 'SAVED! +25' : '+25', BAR_X1 - 4, lanesY[m.lane] - 14);
         } else if (m.x >= edge) {
-          if (!m.teeter) { m.teeter = 0; BG.sound.play('swap'); }
+          if (m.teeter === undefined) { m.teeter = 0; BG.sound.play('swap'); }
           m.teeter += dt;                   // wobbles on the edge: a last moment to save it
           if (m.teeter > TEETER) return strike('dropped', m.lane, BAR_X1 - 2, lanesY[m.lane] - 7, null, 1);
         }
@@ -344,6 +373,7 @@
       pop('ROUND BONUS +' + 100 * round.n, W / 2, 96);
       if (score > best) { best = score; try { localStorage.setItem('barglide.best', String(best)); } catch (e) {} }
       BG.sound.play('clear');
+      ev = null;
       setState('clear', 2.2);
     }
   }
@@ -378,13 +408,14 @@
       if (lives <= 0) return startBoss();
       // Everyone goes back out; the customers still in the bar come again later.
       round.spawned -= customers.length;
-      customers = []; mugs = [];
+      customers = []; mugs = []; ev = null; evT = nextEventGap(1.3);
       setState('ready', 1.4);
     }
   }
 
   // ---------- the owner's ending ----------
   function startBoss() {
+    ev = null;
     boss = { t: 0, lane: bt.lane, x: 330, hits: 0, nextHit: 0, tearT: 0 };
     BG.sound.play('over');
     setState('boss');
@@ -452,6 +483,102 @@
       dash.x += speed * dt;
       if (dash.x >= 272) dash = null;
     }
+  }
+
+  // ---------- bonus events (convo v0.4): dancer, fight, celebration, a helper's break ----------
+  // ⚙️ → Bonus events sets how often they come (Off, Rare ... Lots); the gap is blurred by chance so they never feel timed.
+  function nextEventGap(first) {
+    const base = EVENT_GAPS[cfg.events] || 0;
+    return base ? base * (first || 1) * (0.6 + Math.random() * 0.9) : 1e9;
+  }
+  const DANCES = ['twirl', 'shimmy', 'bounce', 'kick'];
+  const FIGHTS = ['brawl', 'wrestle', 'shove'];
+  const PARTIES = ['confetti', 'toast', 'conga'];
+  const HELPERS = [{ name: 'PAL', kind: 1 }, { name: 'COUSIN', kind: 2 }, { name: 'NEIGHBOUR', kind: 3 }];
+  let lastEvent = '';
+  const pick = list => list[Math.floor(Math.random() * list.length)];
+  function barGuests(lane) { return customers.filter(c => !c.vert && c.state !== 'leave' && (lane === undefined || c.lane === lane)); }
+  function helperOn(lane) { return !!(ev && ev.kind === 'helper' && ev.lanes.indexOf(lane) >= 0 && ev.t > 0.8 && ev.t < ev.dur - 0.8); }
+
+  function startEvent(force) {
+    const kinds = [];
+    if (barGuests().length >= 1) kinds.push('dancer', 'celebration', 'fight');
+    if (barGuests().length >= 2) kinds.push('helper');
+    if (!kinds.length) return false;
+    let kind = force && kinds.indexOf(force) >= 0 ? force : pick(kinds);
+    if (!force && kind === lastEvent && kinds.length > 1) kind = pick(kinds.filter(k => k !== kind));
+    lastEvent = kind;
+    const guestLanes = lanesY.map((_, i) => i).filter(i => barGuests(i).length);
+    if (kind === 'dancer') {
+      ev = { kind, variant: pick(DANCES), t: 0, dur: 10 + Math.random() * 5, freeze: true, lane: Math.floor(Math.random() * lanes), x: 90 + Math.random() * 120, cheerT: 0.5, landed: false, kindSprite: Math.floor(Math.random() * 5) };
+      pop('DRUNK DANCER!', W / 2, 52, true, 1.6); BG.sound.play('cheer');
+    } else if (kind === 'celebration') {
+      ev = { kind, variant: pick(PARTIES), t: 0, dur: 8 + Math.random() * 3, freeze: true, cheerT: 0.4 };
+      pop('CELEBRATION!', W / 2, 52, true, 1.6); BG.sound.play('cheer');
+    } else if (kind === 'fight') {
+      const most = Math.max.apply(null, guestLanes.map(i => barGuests(i).length));
+      const lane = pick(guestLanes.filter(i => barGuests(i).length === most));
+      const x = 100 + Math.random() * 70;
+      ev = { kind, variant: pick(FIGHTS), t: 0, dur: 6 + (x + 30) / 80 + 0.4, hold: lane, lane, x, k1: Math.floor(Math.random() * 5), k2: Math.floor(Math.random() * 5), hitT: 1, whistled: false, swept: false };
+      pop('BAR FIGHT!', W / 2, 52, true, 1.6); BG.sound.play('hey');
+    } else {
+      const lanesWith = guestLanes.slice().sort(() => Math.random() - 0.5);
+      const mine = lanesWith.slice(0, lanes >= 3 && Math.random() < 0.5 ? 2 : 1);
+      ev = { kind, variant: pick(HELPERS), t: 0, dur: 15, lanes: mine, serveT: mine.map(() => 1.2) };
+      pop(ev.variant.name + ' HELPS OUT!', W / 2, 52, true, 1.8); BG.sound.play('tip');
+    }
+    return true;
+  }
+
+  function endEvent() { ev = null; evT = nextEventGap(1); }
+
+  function updateEvents(dt) {
+    if (!ev) {
+      if (dash || show > 0 || round.t < 12) return;
+      evT -= dt;
+      if (evT <= 0 && !startEvent()) evT = 3;
+      return;
+    }
+    ev.t += dt;
+    if (ev.kind === 'dancer' || ev.kind === 'celebration') {
+      ev.cheerT -= dt;
+      if (ev.cheerT <= 0 && ev.t < ev.dur - 1.2) {
+        ev.cheerT = 1.1 + Math.random() * 0.8;
+        const g = pick(barGuests().concat([null]));
+        if (g) pop(pick(['WOO!', 'YEAH!', 'HA HA!', 'HOORAY!']), g.x + 6, lanesY[g.lane] - 22, true, 0.9);
+        if (Math.random() < 0.5) BG.sound.play('cheer');
+      }
+      if (ev.kind === 'celebration' && ev.t < ev.dur - 0.5) {
+        if (Math.random() < dt * 30) parts.push({ x: Math.random() * W, y: 24, vx: (Math.random() - 0.5) * 30, vy: 20 + Math.random() * 30, g: 20, life: 2.4, color: pick(['#ffd36b', '#ff5fa2', '#7fc8ff', '#b6e34a', '#fff8e6']) });
+      }
+      if (ev.kind === 'dancer' && !ev.landed && ev.t > ev.dur - 0.25) {
+        ev.landed = true; BG.sound.play('thud'); pop('OOF!', ev.x + 6, lanesY[ev.lane] + 18, true, 0.9);
+        puff(ev.x + 6, lanesY[ev.lane] + 18);
+      }
+    } else if (ev.kind === 'fight') {
+      const f = ev;
+      if (f.t > 0.6 && f.t < 5.2) {
+        f.hitT -= dt;
+        if (f.hitT <= 0) { f.hitT = 0.7; BG.sound.play('whap'); pop(pick(['POW!', 'WHAM!', 'BONK!', 'OOF!']), f.x + 6, lanesY[f.lane] - 24, true, 0.6); }
+      }
+      if (f.t >= 5.2 && !f.whistled) { f.whistled = true; BG.sound.play('whistle'); pop('BOUNCER!', 60, lanesY[f.lane] - 24, true, 1); }
+      if (f.t >= 6.0) {
+        if (!f.swept) { f.swept = true; f.hold = -1; mugs = mugs.filter(m => !(m.full && m.lane === f.lane)); pop('OUT YOU GO!', W / 2, 52, true, 1.4); }
+        barGuests(f.lane).forEach(c => { if (c.state === 'walk' || c.state === 'pause') { c.state = 'leave'; c.escorted = true; } });   // no score, no penalty
+      }
+    } else if (ev.kind === 'helper') {
+      const h = ev;
+      if (h.t > 0.8 && h.t < h.dur - 0.8) h.lanes.forEach((lane, k) => {
+        h.serveT[k] -= dt;
+        if (h.serveT[k] > 0) return;
+        h.serveT[k] = 0.8 + Math.random() * 0.4;
+        if (mugs.some(m => m.full && m.lane === lane)) return;
+        if (barGuests(lane).some(c => (c.state === 'walk' || c.state === 'pause') && c.x > BAR_X0 - 6)) {
+          mugs.push({ lane, x: BAR_X1 - 8, full: true, helper: true }); BG.sound.play('slide');
+        }
+      });
+    }
+    if (ev.t >= ev.dur) endEvent();
   }
 
   // ---------- bonus round: find the coin under the mugs ----------
@@ -567,10 +694,10 @@
     }
   }
 
-  function drawDoor(i) {
-    const y = lanesY[i], top = y - 26 + 10;
-    const open = doors[i];
-    const w = Math.max(2, Math.round(12 - open * 9));
+  // The one saloon door: the leaves swing open when a guest steps in.
+  function drawDoor() {
+    const top = DOOR_TOP;
+    const w = Math.max(2, Math.round(12 - doorOpen * 9));
     ctx.fillStyle = theme.ink; ctx.fillRect(4, top, w + 1, 18); ctx.fillRect(30 - w - 1, top, w + 1, 18);
     ctx.fillStyle = theme.door; ctx.fillRect(4, top + 1, w, 16); ctx.fillRect(30 - w, top + 1, w, 16);
     ctx.fillStyle = theme.doorDark;
@@ -593,18 +720,114 @@
   }
 
   function drawCustomer(c) {
-    const y = lanesY[c.lane];
-    const bob = c.state === 'walk' && Math.floor(c.bob * 6) % 2 ? -1 : 0;
-    const img = sprites.customers[c.kind];
-    ctx.drawImage(img, Math.round(c.x), y - 14 + bob);
-    if (c.state === 'drink') drawMug(c.x + 7, y - 13, 0.6, false);
-    else if (c.state === 'pushed' || c.extra > 0) drawMug(c.x + 11, y - 7, 1, true);
-    if (c.wants > 1) {                       // ordered two
-      const bx = Math.round(c.x) + 1;
-      ctx.fillStyle = theme.ink; ctx.fillRect(bx, y - 26, 11, 9);
-      ctx.fillStyle = theme.bubble; ctx.fillRect(bx + 1, y - 25, 9, 7);
-      BG.drawText(ctx, 'X2', bx + 2, y - 24, theme.ink, 1);
+    const y = c.vert ? c.fy : lanesY[c.lane];
+    const watching = !c.vert && (c.state === 'walk' || c.state === 'pause') && ev && (ev.freeze || ev.hold === c.lane);
+    let lift = 0, cheer = false;
+    if (watching) {
+      if (ev.kind === 'celebration') { cheer = true; lift = Math.sin(clock * 9 + (ev.variant === 'conga' ? c.x * 0.12 : c.lane)) > 0 ? 2 : 0; }
+      else if (ev.kind === 'dancer') lift = Math.sin(clock * 6 + c.x * 0.2) > 0.6 ? 1 : 0;
+      else lift = Math.sin(clock * 10 + c.x) > 0.7 ? 1 : 0;      // fight: jumpy
     }
+    const moving = c.state === 'walk' || c.state === 'enter' || c.state === 'leave';
+    const bob = moving && Math.floor(c.bob * 6) % 2 ? -1 : 0;
+    const img = sprites.customers[c.kind];
+    const top = Math.round(y) - 14 + bob - lift;
+    if (c.state === 'leave' && !c.vert) {                    // walking home along the bar, facing left
+      ctx.save(); ctx.translate(Math.round(c.x) + 12, top); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0); ctx.restore();
+    } else ctx.drawImage(img, Math.round(c.x), top);
+    if (c.state === 'drink') drawMug(c.x + 7, y - 13, 0.6, false);
+    else if (c.state === 'pushed') drawMug(c.x + 11, y - 7, 1, true);
+    if (cheer) drawMug(c.x + 8, y - 26 - lift, 1, true);       // mug raised
+    if (c.wants > 1 && c.state !== 'leave') {                // still has more than one to drink
+      const bx = Math.round(c.x) + 1, by = Math.round(y) - 26 - (c.vert ? 0 : 0);
+      ctx.fillStyle = theme.ink; ctx.fillRect(bx, by, 11, 9);
+      ctx.fillStyle = theme.bubble; ctx.fillRect(bx + 1, by + 1, 9, 7);
+      BG.drawText(ctx, 'X' + c.wants, bx + 2, by + 2, theme.ink, 1);
+    }
+  }
+
+
+  // ---------- drawing the bonus events ----------
+  const hash = k => Math.abs(Math.sin(k * 127.1 + Math.floor(clock * 12) * 311.7) * 43758.5453) % 1;
+  function drawDancer(i) {
+    const d = ev, y = lanesY[i], t = d.t, T = d.dur;
+    const hop = Math.min(1, t / 0.8), wobbleAt = T - 1.8, fallAt = T - 0.7;
+    let x = d.x, off = (1 - hop) * 16 - Math.sin(hop * Math.PI) * 8, flip = false, ang = 0;
+    if (t >= 0.8) {
+      off = 0;
+      if (d.variant === 'twirl') { flip = Math.floor(t * 6) % 2 === 1; off = -Math.abs(Math.sin(t * 6)) * 2; }
+      else if (d.variant === 'shimmy') { x += Math.floor(t * 12) % 2 ? 1 : -1; off = Math.floor(t * 6) % 2 ? -1 : 0; }
+      else if (d.variant === 'bounce') off = -Math.abs(Math.sin(t * 5)) * 7;
+      else { flip = Math.floor(t / 0.35) % 2 === 1; x += Math.sin(t * 4) * 10; off = -Math.abs(Math.sin(t * 8)) * 3; }
+    }
+    if (t >= wobbleAt) { const k = Math.min(1, (t - wobbleAt) / 1.1); ang = Math.sin(t * 18) * (0.12 + 0.25 * k); x += Math.sin(t * 18) * 2 * k; }
+    if (t >= fallAt) { const p = (t - fallAt) / 0.7; off = p * p * 26; ang = p * 1.3; }
+    ctx.save();
+    ctx.translate(Math.round(x + 6), Math.round(y + 3 + off));
+    ctx.rotate(ang);
+    if (flip) ctx.scale(-1, 1);
+    ctx.drawImage(sprites.customers[d.kindSprite], -6, -16);
+    ctx.restore();
+    if (t >= 0.8 && t < wobbleAt) {                           // music notes over the dancer
+      ctx.fillStyle = '#ffd36b';
+      for (let k = 0; k < 2; k++) { const p = (clock * 0.9 + k * 0.5) % 1, nx = Math.round(x + 2 + k * 8 + Math.sin(p * 6) * 3), ny = Math.round(y - 20 - p * 12); ctx.fillRect(nx, ny, 2, 2); ctx.fillRect(nx + 1, ny - 4, 1, 4); }
+    }
+  }
+
+  function drawBouncer(x, y, flip) {
+    ctx.save(); ctx.translate(Math.round(x), Math.round(y)); if (flip) { ctx.translate(14, 0); ctx.scale(-1, 1); }
+    ctx.fillStyle = theme.ink; ctx.fillRect(2, 0, 10, 8); ctx.fillRect(0, 8, 14, 13);
+    ctx.fillStyle = '#e0a074'; ctx.fillRect(3, 1, 8, 6);
+    ctx.fillStyle = theme.ink; ctx.fillRect(3, 3, 8, 2);
+    ctx.fillStyle = '#3a3a52'; ctx.fillRect(1, 9, 12, 11);
+    ctx.fillStyle = '#e63946'; ctx.fillRect(6, 9, 2, 6);
+    ctx.fillStyle = '#e0a074'; ctx.fillRect(-1, 11, 2, 4); ctx.fillRect(13, 11, 2, 4);
+    ctx.restore();
+  }
+
+  function drawDust(cx, cy) {
+    for (let k = 0; k < 6; k++) {
+      const dx = Math.round((hash(k + 1) - 0.5) * 18), dy = Math.round((hash(k + 9) - 0.5) * 10);
+      ctx.fillStyle = k % 3 ? '#e8e2cc' : '#b9b2a0'; ctx.fillRect(cx + dx - 3, cy + dy - 2, 6, 4);
+    }
+    ctx.fillStyle = '#ffd36b'; ctx.fillRect(cx + Math.round((hash(20) - 0.5) * 16), cy - 8 - Math.round(hash(21) * 4), 2, 2);
+  }
+
+  function drawFight(i) {
+    const f = ev, y = lanesY[i], t = f.t;
+    if (t < 0.15) return;
+    const away = Math.max(0, t - 6.0) * 80;
+    const cx = f.x - away;
+    const a = sprites.customers[f.k1], b = sprites.customers[f.k2];
+    const flipDraw = (img, x, yy, flip) => { ctx.save(); ctx.translate(Math.round(x) + (flip ? 12 : 0), yy); if (flip) ctx.scale(-1, 1); ctx.drawImage(img, 0, 0); ctx.restore(); };
+    if (t >= 6.0) {                                           // carried out, feet off the floor, with the bouncer behind
+      flipDraw(a, cx - 8, y - 16, false); flipDraw(b, cx + 4, y - 16, true);
+      drawBouncer(cx + 18, y - 18, true);
+    } else {
+      let ax = cx - 7, bx = cx + 7, ay = y - 14, by = y - 14;
+      if (f.variant === 'wrestle') { const sw = Math.floor(t / 0.3) % 2; ax = cx - 4 + sw * 8; bx = cx + 4 - sw * 8; ay += 3; by += 3; }
+      else if (f.variant === 'shove') { const s = Math.sin(t * 5) * 6; ax = cx - 8 + s; bx = cx + 8 + s; }
+      else { ax += Math.round((hash(3) - 0.5) * 2); bx += Math.round((hash(4) - 0.5) * 2); }
+      flipDraw(a, ax, ay, false); flipDraw(b, bx, by, true);
+      if (f.variant === 'brawl' || t < 0.6) drawDust(Math.round(cx + 6), y - 8);
+      if (t >= 5.2) drawBouncer(Math.min(cx - 16, -20 + (t - 5.2) / 0.8 * (cx + 4)), y - 18, false);   // the bouncer strides in from the door
+    }
+  }
+
+  function drawHelper(i) {
+    const h = ev, y = lanesY[i];
+    const slide = Math.min(1, h.t / 0.8, Math.max(0, (h.dur - h.t) / 0.8));
+    const hx = (i === bt.lane ? 244 : 270) + (1 - slide) * 44;
+    ctx.save(); ctx.translate(Math.round(hx) + 12, y - 6 - (Math.floor(clock * 8) % 2 && slide < 1 ? 1 : 0)); ctx.scale(-1, 1);
+    ctx.drawImage(sprites.customers[h.variant.kind], 0, 0); ctx.restore();
+    ctx.fillStyle = '#fff8e6'; ctx.fillRect(Math.round(hx) + 3, y + 5, 6, 5);        // apron
+    ctx.fillStyle = theme.ink; ctx.fillRect(Math.round(hx) + 3, y + 5, 6, 1);
+  }
+
+  function drawParty() {                                      // streamers and a banner
+    ctx.fillStyle = '#ff5fa2'; ctx.fillRect(40, 30, 240, 1);
+    for (let k = 0; k < 12; k++) { ctx.fillStyle = ['#ffd36b', '#7fc8ff', '#b6e34a', '#ff5fa2'][k % 4]; ctx.fillRect(46 + k * 20, 31, 4, 3 + (k % 3)); }
+    if (Math.floor(clock * 3) % 2) BG.drawText(ctx, ev.variant === 'toast' ? 'CHEERS!' : 'PARTY TIME', W / 2, 36, '#ffd36b', 1, 'center', theme.ink);
   }
 
   function drawBartender(i) {
@@ -663,8 +886,8 @@
     const bossLane = boss ? boss.lane : -1;
     for (let i = 0; i < lanesY.length; i++) {
       const y = lanesY[i];
-      customers.filter(c => c.lane === i).forEach(drawCustomer);
-      drawDoor(i);
+      customers.filter(c => c.lane === i && !c.vert).forEach(drawCustomer);
+      if (ev && ev.kind === 'fight' && ev.lane === i) drawFight(i);
       ctx.drawImage(barImg, BAR_X0 - 2, y);
       mugs.filter(m => m.lane === i).forEach(m => {
         const wob = m.teeter !== undefined ? (Math.floor(clock * 40) % 2 ? 1 : -1) : 0;
@@ -672,6 +895,8 @@
         if (m.teeter !== undefined) BG.drawText(ctx, '!', m.x + 2, y - 16, '#ff5fa2', 1, 'left', theme.ink);
       });
       tips.filter(t => t.lane === i && (t.t > 2 || Math.floor(t.t * 6) % 2)).forEach(t => drawCoin(t.x, y - 4));
+      if (ev && ev.kind === 'dancer' && ev.lane === i) drawDancer(i);
+      if (ev && ev.kind === 'helper' && ev.lanes.indexOf(i) >= 0) drawHelper(i);
       drawTap(i, state === 'play' && bt.lane === i && bt.holding && bt.fill < 1);
       if (i === bossLane) drawBossScene(i);
       else if (dash && dash.lane === i) ctx.drawImage(dash.back ? sprites.btRight : sprites.btLeft, Math.round(dash.x), y - 6 - (Math.floor(clock * 12) % 2));
@@ -681,7 +906,10 @@
         if (!g.broken) drawMug(g.x, g.y, 1, true);
       }
     }
+    drawDoor();
+    customers.filter(c => c.vert).forEach(drawCustomer);
     if (state === 'title') ctx.drawImage(sprites.btLeft, 272, lanesY[bt.lane] - 6);
+    if (ev && ev.kind === 'celebration') drawParty();
     if (show > 0) drawShow();
     if (state === 'bonus') drawBonus();
     parts.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1); });
@@ -804,9 +1032,11 @@
     hooks,
     // For the smoke test and the notes box.
     state: () => ({ state, score, best, lives, round: round && round.n, lane: bt.lane, fill: bt.fill, tips: tips.length, dashing: !!dash,
-      customers: customers.length, mugs: mugs.length, lanes, shift: round && round.shift.name, paused }),
+      customers: customers.length, mugs: mugs.length, lanes, event: ev && ev.kind, shift: round && round.shift.name, paused }),
     debug: {
-      spawn(lane, x, wants) { customers.push({ lane, x: x === undefined ? 100 : x, state: 'pause', t: 99, kind: 0, push: 0, bob: 0, wants: wants || 1, extra: 0 }); },
+      spawn(lane, x, wants) { customers.push({ lane, x: x === undefined ? 100 : x, state: 'pause', t: 99, kind: 0, push: 0, bob: 0, wants: wants || 1 }); },
+      event(kind) { ev = null; round.t = 99; return startEvent(kind); },
+      eventInfo() { return ev && { kind: ev.kind, variant: ev.variant.name || ev.variant, t: ev.t, dur: ev.dur }; },
       startAt(n) { startRound(n); },
       emptyMug(lane, x) { mugs.push({ lane, x: x || 200, full: false }); },
       peekMugs() { return mugs.map(m => ({ lane: m.lane, x: Math.round(m.x), teeter: m.teeter })); },
@@ -818,7 +1048,7 @@
       bonus() { startBonus(); },
       bonusInfo() { return bonus && { phase: bonus.phase, coinSlot: bonus.slotOf[bonus.coin], win: bonus.win }; },
       show: () => show,
-      peek() { return { customers: customers.map(c => ({ lane: c.lane, x: c.x, state: c.state })), mugs: mugs.map(m => ({ lane: m.lane, x: m.x, full: m.full })) }; },
+      peek() { return { customers: customers.map(c => ({ lane: c.lane, x: c.x, y: c.vert ? c.fy : undefined, state: c.state, wants: c.wants, vert: !!c.vert })), mugs: mugs.map(m => ({ lane: m.lane, x: m.x, full: m.full })) }; },
       freezeSpawns() { round.spawned = round.total; },
       step(sec) { const n = Math.round(sec / 0.02); for (let i = 0; i < n; i++) update(0.02); draw(); }
     }

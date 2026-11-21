@@ -78,6 +78,7 @@ body {
 .setting > label { display: block; font-weight: 800; margin-bottom: 4px; }
 .seg { display: flex; gap: 8px; }
 .seg button { flex: 1; min-height: 52px; border: 3px solid var(--ink); border-radius: 16px; background: #fff; font: 700 16px system-ui, sans-serif; cursor: pointer; color: var(--ink); }
+.setting input[type=range] { width: 100%; min-height: 44px; accent-color: var(--ink); }
 .seg button.on { background: var(--on); }
 .sub { margin: 4px 0; font-size: 14px; font-weight: 500; color: var(--sub); }
 .pre { white-space: pre-wrap; }

@@ -22,7 +22,7 @@
 
   // ---------- settings ----------
   const KEY = 'barglide.settings';
-  const DEFAULTS = { start: '1', speed: 'normal', glasses: '3', ending: 'spank', theme: 'saloon', crt: 1, sound: 1, music: 1, showErrors: false };
+  const DEFAULTS = { start: '1', speed: 'normal', glasses: '3', ending: 'spank', theme: 'saloon', crt: 1, sound: 1, music: 1, showErrors: false, glass: 1, events: 2 };
   let settings = Object.assign({}, DEFAULTS, store.get(KEY, {}));
   for (const k in DEFAULTS) {               // an old saved value that no longer matches falls back
     const seg = document.querySelector('.seg[data-key="' + k + '"]');
@@ -30,13 +30,17 @@
   }
   const SPEEDS = { slow: 0.75, normal: 1, fast: 1.25 };
   function gameConfig() {
-    return { start: +settings.start, speed: SPEEDS[settings.speed] || 1, glasses: +settings.glasses, ending: settings.ending, theme: settings.theme };
+    return { start: +settings.start, speed: SPEEDS[settings.speed] || 1, glasses: +settings.glasses, ending: settings.ending, theme: settings.theme,
+      glass: +settings.glass || 1, events: Math.max(0, Math.min(4, +settings.events))};
   }
   function renderSettings() {
     document.querySelectorAll('.seg').forEach(seg => {
       const v = String(settings[seg.dataset.key]);
       seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
     });
+    $('glass').value = settings.glass; $('events').value = settings.events;
+    $('glassVal').textContent = +settings.glass < 1 ? 'slower' : +settings.glass > 1 ? 'faster' : 'normal';
+    $('eventsVal').textContent = ['off', 'rare', 'sometimes', 'often', 'lots'][+settings.events] || 'sometimes';
     $('showErrors').checked = !!settings.showErrors;
     document.body.dataset.theme = settings.theme;
     $('crt').hidden = !+settings.crt;
@@ -51,6 +55,9 @@
     renderSettings();
     G.configure(gameConfig());
     if (key === 'start') { showOverlay('title'); }
+  }));
+  ['glass', 'events'].forEach(id => $(id).addEventListener('input', e => {
+    settings[id] = +e.target.value; store.set(KEY, settings); renderSettings(); G.configure(gameConfig());
   }));
   $('showErrors').addEventListener('change', e => { settings.showErrors = e.target.checked; store.set(KEY, settings); renderErrors(); });
 
