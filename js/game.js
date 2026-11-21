@@ -534,7 +534,7 @@
 
   function updateEvents(dt) {
     if (!ev) {
-      if (dash || show > 0 || round.t < 12) return;
+      if (dash || show > 0 || round.t < 12 || round.n < 2) return;   // events start at Lunch (convo v0.5)
       evT -= dt;
       if (evT <= 0 && !startEvent()) evT = 3;
       return;
@@ -564,7 +564,9 @@
       if (f.t >= 5.2 && !f.whistled) { f.whistled = true; BG.sound.play('whistle'); pop('BOUNCER!', 60, lanesY[f.lane] - 24, true, 1); }
       if (f.t >= 6.0) {
         if (!f.swept) { f.swept = true; f.hold = -1; mugs = mugs.filter(m => !(m.full && m.lane === f.lane)); pop('OUT YOU GO!', W / 2, 52, true, 1.4); }
-        barGuests(f.lane).forEach(c => { if (c.state === 'walk' || c.state === 'pause') { c.state = 'leave'; c.escorted = true; } });   // no score, no penalty
+        barGuests(f.lane).forEach(c => {
+          if (c.state === 'walk' || c.state === 'pause') { c.state = 'leave'; c.escorted = true; round.spawned = Math.max(0, round.spawned - 1); }   // no score, no penalty, and they don't count: new guests come
+        });
       }
     } else if (ev.kind === 'helper') {
       const h = ev;
