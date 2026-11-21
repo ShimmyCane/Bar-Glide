@@ -69,6 +69,12 @@
           <p class="sub">Morning is two slow bars to warm up. Changing this starts a new game.</p></div>
         <div class="setting"><label>Speed</label>
           <div class="seg" data-key="speed"><button data-v="slow">🐢 Slow</button><button data-v="normal">Normal</button><button data-v="fast">🐇 Fast</button></div></div>
+        <div class="setting"><label for="glass">Empty glasses coming back: <b id="glassVal"></b></label>
+          <input type="range" id="glass" data-key="glass" min="0.5" max="1.5" step="0.25">
+          <p class="sub">How fast an empty mug slides back to you. Slower gives you more time.</p></div>
+        <div class="setting"><label for="events">Bonus events: <b id="eventsVal"></b></label>
+          <input type="range" id="events" data-key="events" min="0" max="4" step="1">
+          <p class="sub">A drunk dancer, a bar fight, a celebration or a helper on a break. Off to Lots; they come at uneven times.</p></div>
         <div class="setting"><label>Glasses you can break</label>
           <div class="seg" data-key="glasses"><button data-v="3">3</button><button data-v="5">5</button></div>
           <p class="sub">Counts from the next game.</p></div>
@@ -95,6 +101,7 @@
       <button class="panelHead" type="button" aria-expanded="true"><span>🎛️</span><span class="panelTitle">Pages</span><span class="panelMark">▾</span></button>
       <div class="panelBody">
         <a class="btn ghost link" href="synth.html">🎛️ Sound lab: play with the synthesizer</a>
+        <a class="btn ghost link" href="v1/index.html">🕹️ Version 1: the pixel original (0.4.0)</a>
       </div>
     </section>
 

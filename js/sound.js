@@ -72,6 +72,9 @@ window.BG = window.BG || {};
   SOUNDS.show = t => { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, t + i * 0.07, 0.1, 'square', 0.09)); };
   SOUNDS.swap = t => { noise(t, 0.08, 0.12, 'bandpass', 900, 1600); };
   SOUNDS.jackpot = t => { [784, 988, 1175, 1568, 1175, 1568, 2093].forEach((f, i) => tone(f, t + i * 0.08, 0.14, 'square', 0.11)); };
+  SOUNDS.cheer = t => { noise(t, 0.5, 0.12, 'bandpass', 1400, 2600); [523, 659, 784].forEach((f, i) => tone(f, t + i * 0.08, 0.12, 'triangle', 0.08)); };
+  SOUNDS.whistle = t => { tone(1900, t, 0.18, 'sine', 0.12, 2600); tone(2600, t + 0.2, 0.25, 'sine', 0.12, 2200); };
+  SOUNDS.thud = t => { tone(110, t, 0.15, 'sine', 0.3, 50); noise(t, 0.1, 0.2, 'lowpass', 900, 200); };
   SOUNDS.splash = t => { noise(t, 0.6, 0.3, 'lowpass', 3000, 300); tone(300, t, 0.3, 'sine', 0.15, 120); };
 
   // ---- Music: a looping, upbeat honky-tonk tune (written here, 4 bars: C F G C). ----
