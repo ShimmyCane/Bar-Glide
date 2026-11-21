@@ -25,4 +25,6 @@
 - [x] (0.4.0) X2 bug: with an early beer the X2 sign sometimes fails. A guest should drink one, send the mug back, lose the X2 sign, drink the second, then leave (shown walking down-screen for now). (needs a repro; the code keeps `wants` and `extra`, so the sign logic is the first suspect)
 - [x] (0.4.0) Bonus events (all four built, with variants; ⚙️ switch plus a frequency slider; about 15 s each, several dance and fight variants): Drunk dancer (everyone watches, time bought), Bar fight (bouncer throws them out, that bar's guests reset), Celebration (a pause to serve), Break (a helper clears one or more bars).
 - Score read: 1 saved score (JIM, round 8, v0.3.0). Tables are live in the Family project.
-- [ ] Jimmy to play 0.4.0 and answer convo v0.5 (door look, event timing, helper score).
+- [x] Answered convo v0.5: events start at Lunch (0.5.0), escorted guests do not count (0.5.0), helper score stays, sound lab not yet.
+- [x] Pixel original archived as `v1/` (link in ⚙️ → Pages). Modern look in 0.5.0.
+- [ ] Jimmy to play 0.5.0 on the iPad: does the modern look feel right? (convo v0.6 when ready)

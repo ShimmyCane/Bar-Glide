@@ -68,77 +68,122 @@
     for (let i = 0; i < n; i++) lanesY.push(top + i * gap);
   }
 
+  // ---------- drawing helpers (version 2: the canvas is SCALE times bigger and drawn with smooth shapes) ----------
+  const S = BG.SCALE, TAU = Math.PI * 2;
+  const shade = BG.shade, mixc = BG.mix;
+  function blit(img, x, y) { ctx.drawImage(img, x, y, img.lw, img.lh); }
+  function rr(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  }
+  function disc(cx, cy, r, fill) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fillStyle = fill; ctx.fill(); }
+  function vg(y0, y1, c0, c1) { const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, c0); g.addColorStop(1, c1); return g; }
+  function hg(x0, x1, c0, c1) { const g = ctx.createLinearGradient(x0, 0, x1, 0); g.addColorStop(0, c0); g.addColorStop(1, c1); return g; }
+  function outline(w) { ctx.strokeStyle = theme.ink; ctx.lineWidth = w || 0.6; ctx.stroke(); }
+  function soft(cx, cy, r, color) {                      // a soft round glow
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  }
+
   function buildBackground() {
     const c = document.createElement('canvas');
-    c.width = W; c.height = H;
+    c.width = W * S; c.height = H * S; c.lw = W; c.lh = H;
     const x = c.getContext('2d');
-    const T = theme;
-    x.fillStyle = T.wall; x.fillRect(0, 0, W, H);
-    for (let px = 0; px < W; px += 16) {            // wall planks
-      x.fillStyle = T.plank; x.fillRect(px + 1, 0, 14, H);
-      x.fillStyle = T.plankLine; x.fillRect(px, 0, 1, H);
-      x.fillRect(px + 7, (px * 7) % 40 + 20, 2, 1);  // knots
+    x.scale(S, S);
+    const T = theme, pastel = T === BG.THEMES.pastel;
+    const save = ctx; ctx = x;                 // the helpers draw on `ctx`
+    // Wall: a soft gradient with planks, grain and a little light from above.
+    x.fillStyle = vg(0, H, shade(T.wall, 1.12), shade(T.wall, 0.78)); x.fillRect(0, 0, W, H);
+    for (let px = 0; px < W; px += 16) {
+      x.fillStyle = (px / 16) % 2 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.06)'; x.fillRect(px, 0, 16, H);
+      x.fillStyle = T.plankLine; x.globalAlpha = 0.55; x.fillRect(px, 0, 0.6, H); x.globalAlpha = 1;
+      x.fillStyle = 'rgba(255,255,255,0.06)'; x.fillRect(px + 0.6, 0, 0.5, H);
+      for (let k = 0; k < 5; k++) { x.fillStyle = 'rgba(0,0,0,0.07)'; x.fillRect(px + 2 + ((px * 7 + k * 5) % 11), (px * 13 + k * 41) % H, 0.5, 6 + (k * 7) % 10); }
     }
-    // Shelves with bottles, either side of the sign.
+    // Shelves with glass bottles, lit from behind.
     const shelfY = 40;
-    x.fillStyle = T.shelf; x.fillRect(40, shelfY, 92, 4); x.fillRect(188, shelfY, 92, 4);
-    x.fillStyle = T.shelfHi; x.fillRect(40, shelfY, 92, 1); x.fillRect(188, shelfY, 92, 1);
+    [[40, 132], [188, 280]].forEach(([a, b]) => {
+      soft((a + b) / 2, shelfY - 8, 60, pastel ? 'rgba(255,255,230,0.35)' : 'rgba(255,190,100,0.22)');
+      x.fillStyle = vg(shelfY - 1, shelfY + 5, T.shelfHi, shade(T.shelf, 0.8)); rr(a - 2, shelfY, b - a + 4, 4.5, 1.2); x.fill(); outline(0.5);
+      x.fillStyle = vg(shelfY + 5, shelfY + 10, 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)'); x.fillRect(a, shelfY + 5, b - a, 5);
+    });
     const bottleCols = ['#3f8f5a', '#c8463a', '#d9a441', '#6a9fd8', '#8a5a2b', '#b05fa0', '#e8e2cc'];
     let bi = 0;
     [[44, 128], [192, 276]].forEach(([a, b]) => {
       for (let bx = a; bx < b; bx += 7) {
-        const hgt = 8 + ((bx * 13) % 5);
-        x.fillStyle = bottleCols[bi++ % bottleCols.length];
-        x.fillRect(bx, shelfY - hgt, 4, hgt);
-        x.fillRect(bx + 1, shelfY - hgt - 3, 2, 3);
-        x.fillStyle = 'rgba(255,255,255,0.35)'; x.fillRect(bx + 1, shelfY - hgt + 2, 1, hgt - 4);
+        const hgt = 9 + ((bx * 13) % 5), col = bottleCols[bi++ % bottleCols.length], top = shelfY - hgt;
+        x.fillStyle = 'rgba(0,0,0,0.2)'; x.beginPath(); x.ellipse(bx + 2.4, shelfY + 0.3, 3.2, 0.9, 0, 0, TAU); x.fill();
+        x.fillStyle = hg(bx, bx + 4.6, shade(col, 1.3), shade(col, 0.7)); rr(bx, top, 4.6, hgt, 1.5); x.fill(); outline(0.45);
+        x.fillStyle = hg(bx + 1.2, bx + 3.4, shade(col, 1.15), shade(col, 0.8)); rr(bx + 1.3, top - 3.4, 2.1, 3.8, 0.8); x.fill(); outline(0.4);
+        x.fillStyle = shade(col, 0.5); x.fillRect(bx + 1.3, top - 3.7, 2.1, 0.9);
+        x.fillStyle = 'rgba(255,248,230,0.8)'; x.fillRect(bx + 0.4, top + hgt * 0.4, 3.8, hgt * 0.28);
+        x.fillStyle = 'rgba(255,255,255,0.5)'; x.fillRect(bx + 0.8, top + 1.2, 0.7, hgt - 3);
       }
     });
-    // Hanging lamps with a warm glow.
+    // Hanging lamps with a warm pool of light.
     [86, 234].forEach(lx => {
-      const g = x.createRadialGradient(lx, 26, 2, lx, 26, 60);
-      g.addColorStop(0, T.glow); g.addColorStop(1, 'rgba(0,0,0,0)');
-      x.fillStyle = g; x.fillRect(lx - 60, 0, 120, 90);
-      x.fillStyle = T.ink; x.fillRect(lx, 0, 1, 18);
-      x.fillStyle = T.shelf; x.fillRect(lx - 5, 18, 11, 3); x.fillRect(lx - 3, 16, 7, 2);
-      x.fillStyle = T.lamp; x.fillRect(lx - 2, 21, 5, 2);
+      soft(lx, 30, 72, T.glow); soft(lx, 25, 16, pastel ? 'rgba(255,255,220,0.5)' : 'rgba(255,214,140,0.5)');
+      x.fillStyle = T.ink; x.fillRect(lx - 0.3, 0, 0.6, 16);
+      x.beginPath(); x.arc(lx, 22, 6, Math.PI, 0); x.closePath(); x.fillStyle = vg(16, 22, T.brass, T.brassDark); x.fill(); outline(0.5);
+      disc(lx, 23.2, 2.2, T.lamp);
     });
-    // Right wall panel with one tap per bar.
-    x.fillStyle = T.plankLine; x.fillRect(288, 0, 1, H);
-    x.fillStyle = T.shelf; x.fillRect(289, 0, 31, H);
-    for (let py = 0; py < H; py += 12) { x.fillStyle = T.barPanel; x.fillRect(289, py, 31, 1); }
-    // Floor at the bottom.
-    for (let fx = 0; fx < W; fx += 8) {
-      x.fillStyle = (fx / 8) % 2 ? T.floorA : T.floorB;
-      x.fillRect(fx, 186, 8, 14);
+    // Right wall: a wooden panel with one tap per bar, shaded at the edge.
+    x.fillStyle = hg(288, 320, shade(T.shelf, 0.95), shade(T.shelf, 0.7)); x.fillRect(288, 0, 32, H);
+    for (let py = 0; py < H; py += 12) { x.fillStyle = 'rgba(0,0,0,0.12)'; x.fillRect(289, py, 31, 0.5); x.fillStyle = 'rgba(255,255,255,0.06)'; x.fillRect(289, py + 0.5, 31, 0.5); }
+    x.fillStyle = hg(288, 293, 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0)'); x.fillRect(288, 0, 5, H);
+    x.fillStyle = T.plankLine; x.fillRect(287.6, 0, 0.8, H);
+    // Floor.
+    x.fillStyle = vg(186, H, shade(T.floorB, 1.15), shade(T.floorA, 0.7)); x.fillRect(0, 186, W, 14);
+    for (let fx = 0; fx < W; fx += 10) { x.fillStyle = (fx / 10) % 2 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.12)'; x.fillRect(fx, 186, 10, 14); }
+    x.fillStyle = vg(180, 186, 'rgba(0,0,0,0)', 'rgba(0,0,0,0.3)'); x.fillRect(0, 180, W, 6);
+    // The saloon doorway (night sky or a bright day) and the carpeted walkway to every bar.
+    rr(2, DOOR_TOP - 2, 30, 22, 3.5); x.fillStyle = T.ink; x.fill();
+    rr(4, DOOR_TOP, 26, 18, 2); x.fillStyle = vg(DOOR_TOP, DOOR_TOP + 18, shade(T.night, 0.7), shade(T.night, 1.3)); x.fill();
+    disc(23.5, DOOR_TOP + 5, 2.4, T.star); disc(24.4, DOOR_TOP + 4.4, 2, shade(T.night, 0.95));
+    [[9, 3], [15, 7], [19, 2], [11, 10]].forEach(([sx, sy]) => disc(sx, DOOR_TOP + sy, 0.45, T.star));
+    rr(2, DOOR_TOP + 20, 30, 166 - DOOR_TOP, 2); x.fillStyle = T.ink; x.fill();
+    const carpet = mixc(T.floorB, T.neon, pastel ? 0.3 : 0.35);
+    x.fillStyle = hg(4, 30, shade(carpet, 1.1), shade(carpet, 0.8)); x.fillRect(4, DOOR_TOP + 20, 26, 166 - DOOR_TOP);
+    x.fillStyle = T.rail; x.fillRect(5, DOOR_TOP + 20, 0.7, 166 - DOOR_TOP); x.fillRect(28.3, DOOR_TOP + 20, 0.7, 166 - DOOR_TOP);
+    for (let wy = DOOR_TOP + 26; wy < 184; wy += 14) {
+      x.beginPath(); x.moveTo(17, wy - 5); x.lineTo(22, wy); x.lineTo(17, wy + 5); x.lineTo(12, wy); x.closePath();
+      x.fillStyle = 'rgba(255,230,160,0.2)'; x.fill();
     }
-    // One doorway at the top left, with a bit of night sky, and a walkway down to every bar.
-    x.fillStyle = T.ink; x.fillRect(2, DOOR_TOP - 2, 30, 22);
-    x.fillStyle = T.night; x.fillRect(4, DOOR_TOP, 26, 18);
-    x.fillStyle = T.star; x.fillRect(9, DOOR_TOP + 3, 1, 1); x.fillRect(22, DOOR_TOP + 6, 1, 1); x.fillRect(15, DOOR_TOP + 1, 1, 1);
-    x.fillStyle = T.ink; x.fillRect(2, DOOR_TOP + 20, 30, 166 - DOOR_TOP);
-    x.fillStyle = T.floorB; x.fillRect(4, DOOR_TOP + 20, 26, 166 - DOOR_TOP);
-    x.fillStyle = T.floorA;
-    for (let wy = DOOR_TOP + 22; wy < 184; wy += 8) { x.fillRect(5, wy, 6, 2); x.fillRect(16, wy + 4, 6, 2); x.fillRect(25, wy, 4, 2); }
+    // A gentle vignette.
+    const vgn = x.createRadialGradient(W / 2, H / 2, 70, W / 2, H / 2, 210);
+    vgn.addColorStop(0, 'rgba(0,0,0,0)'); vgn.addColorStop(1, pastel ? 'rgba(120,70,60,0.14)' : 'rgba(0,0,0,0.5)');
+    x.fillStyle = vgn; x.fillRect(0, 0, W, H);
     bg = c;
 
-    // One bar, drawn once and reused for every lane.
+    // One bar, drawn once and reused for every lane: polished top, panelled front, brass rail.
+    const bw = BAR_X1 - BAR_X0 + 4;
     const b = document.createElement('canvas');
-    b.width = BAR_X1 - BAR_X0 + 4; b.height = 16;
+    b.width = bw * S; b.height = 16 * S; b.lw = bw; b.lh = 16;
     const y = b.getContext('2d');
-    y.fillStyle = T.ink; y.fillRect(0, 0, b.width, 16);
-    y.fillStyle = T.barTop; y.fillRect(1, 1, b.width - 2, 4);
-    y.fillStyle = T.barTopHi; y.fillRect(1, 1, b.width - 2, 1);
-    y.fillStyle = T.barFront; y.fillRect(1, 6, b.width - 2, 9);
-    for (let px = 12; px < b.width - 4; px += 24) { y.fillStyle = T.barPanel; y.fillRect(px, 7, 1, 7); y.fillRect(px + 2, 7, 1, 7); }
-    y.fillStyle = T.rail; y.fillRect(1, 12, b.width - 2, 1);
+    y.scale(S, S); ctx = y;
+    rr(0, 0, bw, 16, 2); y.fillStyle = T.ink; y.fill();
+    rr(0.8, 0.8, bw - 1.6, 5, 1.6); y.fillStyle = vg(0.8, 5.8, T.barTopHi, T.barTop); y.fill();
+    y.fillStyle = 'rgba(255,255,255,0.45)'; y.fillRect(2, 1.3, bw - 4, 0.7);
+    y.fillStyle = 'rgba(255,255,255,0.12)'; y.fillRect(14, 2.4, 40, 0.6); y.fillRect(bw - 70, 3.2, 30, 0.6);
+    y.fillStyle = vg(5.8, 15.2, shade(T.barFront, 1.15), shade(T.barFront, 0.78)); y.fillRect(0.8, 5.8, bw - 1.6, 9.4);
+    for (let px = 8; px < bw - 14; px += 26) {
+      rr(px, 7, 21, 5.6, 1.2); y.fillStyle = shade(T.barPanel, 0.85); y.fill();
+      rr(px + 0.5, 7.5, 20, 4.6, 0.9); y.fillStyle = vg(7.5, 12.1, shade(T.barPanel, 1.1), shade(T.barPanel, 0.9)); y.fill();
+      y.fillStyle = 'rgba(255,255,255,0.18)'; y.fillRect(px + 1.2, 7.7, 18.6, 0.5);
+    }
+    y.fillStyle = vg(12.9, 14.5, shade(T.rail, 1.3), shade(T.rail, 0.7)); rr(0.8, 12.9, bw - 1.6, 1.6, 0.8); y.fill();
+    y.fillStyle = 'rgba(255,255,255,0.6)'; y.fillRect(2, 13.2, bw - 4, 0.4);
     barImg = b;
+    ctx = save;
   }
 
   function init(el) {
     canvas = el;
+    canvas.width = W * BG.SCALE; canvas.height = H * BG.SCALE;
     ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     sprites = BG.sprites();
     try { best = +localStorage.getItem('barglide.best') || 0; } catch (e) { best = 0; }
     applyConfig();
@@ -645,26 +690,20 @@
     const b = bonus;
     ctx.fillStyle = theme.dim; ctx.fillRect(0, 0, W, H); ctx.fillRect(0, 0, W, H);
     // Spotlight and a short counter.
-    const g = ctx.createRadialGradient(160, 120, 10, 160, 120, 120);
-    g.addColorStop(0, 'rgba(255, 220, 140, 0.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    ctx.drawImage(barImg, 0, 0, barImg.width, 16, 70, 126, 180, 16);
-    BG.drawText(ctx, 'BONUS ROUND', W / 2, 30, theme.neon, 3, 'center', theme.ink);
+    soft(160, 120, 120, 'rgba(255, 220, 140, 0.4)');
+    ctx.drawImage(barImg, 70, 126, 180, 16);
+    BG.drawText(ctx, 'BONUS ROUND', W / 2, 26, theme.neon, 3, 'center', theme.ink);
     const say = { show: 'WATCH THE COIN', shuffle: 'KEEP YOUR EYE ON IT', pick: 'TAP THE MUG WITH THE COIN', reveal: b.win ? 'YOU FOUND IT!' : 'NOT THAT ONE' }[b.phase];
-    BG.drawText(ctx, say, W / 2, 52, theme.hud, 1, 'center', theme.hudShadow);
+    BG.drawText(ctx, say, W / 2, 50, theme.hud, 1, 'center', theme.hudShadow);
     for (let i = 0; i < 3; i++) {
       const { x, lift } = mugSlotX(i);
       let up = 0;
       if (b.phase === 'show' && i === b.coin) up = Math.min(14, Math.sin(Math.min(1, b.t / 1.6) * Math.PI) * 18);
       if (b.phase === 'reveal' && (i === b.pick || i === b.coin)) up = Math.min(16, b.t * 40);
-      if (up > 2 && i === b.coin) {      // the gold coin
-        ctx.fillStyle = theme.ink; ctx.fillRect(x - 4, 120, 9, 6);
-        ctx.fillStyle = '#ffd36b'; ctx.fillRect(x - 3, 121, 7, 4);
-        ctx.fillStyle = '#fff8e6'; ctx.fillRect(x - 2, 121, 2, 1);
-      }
+      if (up > 2 && i === b.coin) drawCoin(x - 2.5, 118);      // the gold coin
       // A big upside-down mug.
       ctx.save();
-      ctx.translate(Math.round(x - 12), Math.round(126 - up - lift));
+      ctx.translate(x - 12, 126 - up - lift);
       ctx.scale(3, -3);
       drawMug(0, 0, 0, false);
       ctx.restore();
@@ -679,46 +718,54 @@
   function pop(text, x, y, bubble, life) { pops.push({ text, x, y, t: 0, life: life || 1.1, bubble: !!bubble }); }
 
   // ---------- drawing ----------
+  // A glass mug: glassy body, amber beer, a foamy head and a handle. 8 x 9 game units from (x, y).
   function drawMug(x, y, fill, full) {
-    x = Math.round(x); y = Math.round(y);
-    const k = theme.ink;
-    ctx.fillStyle = k;
-    ctx.fillRect(x, y, 6, 8);                       // outline
-    ctx.fillRect(x + 6, y + 2, 2, 1); ctx.fillRect(x + 7, y + 2, 1, 4); ctx.fillRect(x + 6, y + 5, 2, 1); // handle
-    ctx.fillStyle = '#bfe3ea'; ctx.fillRect(x + 1, y + 1, 4, 6);
-    const rows = full ? 6 : Math.round(fill * 6);
-    if (rows > 0) {
-      ctx.fillStyle = '#f2b134'; ctx.fillRect(x + 1, y + 7 - rows, 4, rows);
-      ctx.fillStyle = '#ffd36b'; ctx.fillRect(x + 1, y + 7 - rows, 1, rows);
+    const topFull = full || fill >= 1;
+    ctx.beginPath(); ctx.arc(x + 6.1, y + 4.2, 1.9, -1.25, 1.25);
+    ctx.strokeStyle = theme.ink; ctx.lineWidth = 1.7; ctx.stroke();
+    ctx.strokeStyle = '#d4edf2'; ctx.lineWidth = 0.75; ctx.stroke();
+    rr(x, y, 6, 8.2, 1.2); ctx.fillStyle = hg(x, x + 6, 'rgba(236,249,252,0.95)', 'rgba(186,222,230,0.9)'); ctx.fill();
+    const rows = topFull ? 6.6 : fill * 6.6;
+    if (rows > 0.3) {
+      ctx.save(); rr(x, y, 6, 8.2, 1.2); ctx.clip();
+      ctx.fillStyle = vg(y + 7.7 - rows, y + 8, '#ffd36b', '#e8941a'); ctx.fillRect(x, y + 7.8 - rows, 6, rows + 0.4);
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      for (let k = 0; k < 3; k++) disc(x + 1.5 + k * 1.5, y + 6.6 - ((clock * 3 + k * 0.7) % 1) * Math.max(1, rows - 1), 0.28, 'rgba(255,255,255,0.6)');
+      ctx.restore();
     }
-    if (full || fill >= 1) {
-      ctx.fillStyle = '#fff8e6'; ctx.fillRect(x + 1, y + 1, 4, 2); ctx.fillRect(x, y - 1, 6, 2); ctx.fillRect(x + 1, y - 2, 3, 1);
+    rr(x, y, 6, 8.2, 1.2); outline(0.75);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; rr(x + 0.9, y + 1.4, 0.8, 5.2, 0.4); ctx.fill();
+    if (topFull) {
+      ctx.fillStyle = '#fffaf0';
+      [[1.4, 0.3, 1.5], [3, -0.4, 1.7], [4.6, 0.4, 1.4]].forEach(([dx, dy, r]) => { ctx.beginPath(); ctx.arc(x + dx, y + dy, r, 0, TAU); ctx.fill(); });
+      ctx.fillRect(x + 0.1, y + 0.2, 5.8, 1.3);
+      ctx.fillStyle = 'rgba(232,148,26,0.35)'; ctx.fillRect(x + 0.4, y + 1.2, 5.2, 0.4);
     }
   }
 
   // The one saloon door: the leaves swing open when a guest steps in.
   function drawDoor() {
-    const top = DOOR_TOP;
-    const w = Math.max(2, Math.round(12 - doorOpen * 9));
-    ctx.fillStyle = theme.ink; ctx.fillRect(4, top, w + 1, 18); ctx.fillRect(30 - w - 1, top, w + 1, 18);
-    ctx.fillStyle = theme.door; ctx.fillRect(4, top + 1, w, 16); ctx.fillRect(30 - w, top + 1, w, 16);
-    ctx.fillStyle = theme.doorDark;
-    for (let k = 2; k < w - 1; k += 3) { ctx.fillRect(4 + k, top + 3, 1, 12); ctx.fillRect(30 - w + k, top + 3, 1, 12); }
+    const top = DOOR_TOP, w = Math.max(2, 12 - doorOpen * 9);
+    [[4, false], [30 - w, true]].forEach(([lx, right]) => {
+      rr(lx, top + 0.3, w, 17.4, 1.4); ctx.fillStyle = hg(lx, lx + w, right ? theme.doorDark : theme.door, right ? theme.door : theme.doorDark); ctx.fill(); outline(0.6);
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      for (let k = 0; k < 6; k++) ctx.fillRect(lx + 1, top + 3 + k * 2.4, Math.max(0.5, w - 2), 0.7);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(lx + 0.7, top + 1, Math.max(0.5, w - 1.4), 0.6);
+    });
+    if (w > 6) disc(right0(w), top + 9, 0.8, theme.brass);
+    function right0(wd) { return 4 + wd - 1.4; }
   }
 
   function drawTap(i, pouring) {
     const y = lanesY[i];
-    ctx.fillStyle = theme.ink; ctx.fillRect(TAP_X - 1, y - 17, 10, 7);
-    ctx.fillStyle = theme.brass; ctx.fillRect(TAP_X, y - 16, 8, 5);
-    ctx.fillStyle = theme.brassDark; ctx.fillRect(TAP_X, y - 12, 8, 1);
-    ctx.fillStyle = theme.ink; ctx.fillRect(TAP_X, y - 11, 3, 4);   // spout
-    ctx.fillStyle = theme.brass; ctx.fillRect(TAP_X + 1, y - 11, 1, 3);
-    // Handle: tips forward while pouring.
-    const hx = TAP_X + 4 + (pouring ? -3 : 0);
-    ctx.fillStyle = theme.ink; ctx.fillRect(hx - 1, y - 28, 4, 12);
-    ctx.fillStyle = ['#c8463a', '#3f8f5a', '#34508f', '#d98a2b'][i % 4]; ctx.fillRect(hx, y - 27, 2, 10);
-    ctx.fillStyle = '#fff8e6'; ctx.fillRect(hx, y - 27, 1, 2);
-    if (pouring) { ctx.fillStyle = '#f2b134'; ctx.fillRect(TAP_X + 1, y - 7, 1, 4); }
+    rr(TAP_X - 1, y - 17, 10, 7, 2.2); ctx.fillStyle = vg(y - 17, y - 10, theme.brass, theme.brassDark); ctx.fill(); outline(0.6);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(TAP_X + 0.2, y - 16, 7, 0.8);
+    rr(TAP_X - 0.4, y - 11, 3.2, 4.8, 1); ctx.fillStyle = vg(y - 11, y - 6, theme.brass, theme.brassDark); ctx.fill(); outline(0.55);
+    const hx = TAP_X + 4 + (pouring ? -3 : 0), col = ['#c8463a', '#3f8f5a', '#34508f', '#d98a2b'][i % 4];
+    rr(hx - 1.1, y - 27, 3.4, 11, 1.6); ctx.fillStyle = hg(hx - 1, hx + 2, shade(col, 1.3), shade(col, 0.75)); ctx.fill(); outline(0.6);
+    disc(hx + 0.6, y - 27.6, 2, shade(col, 1.1)); ctx.beginPath(); ctx.arc(hx + 0.6, y - 27.6, 2, 0, TAU); outline(0.55);
+    disc(hx, y - 28.2, 0.6, 'rgba(255,255,255,0.7)');
+    if (pouring) { rr(TAP_X + 0.4, y - 7, 1.4, 5, 0.7); ctx.fillStyle = '#f2b134'; ctx.fill(); }
   }
 
   function drawCustomer(c) {
@@ -731,23 +778,22 @@
       else lift = Math.sin(clock * 10 + c.x) > 0.7 ? 1 : 0;      // fight: jumpy
     }
     const moving = c.state === 'walk' || c.state === 'enter' || c.state === 'leave';
-    const bob = moving && Math.floor(c.bob * 6) % 2 ? -1 : 0;
+    const bob = moving ? Math.abs(Math.sin(c.bob * 9)) * -1.1 : 0;
     const img = sprites.customers[c.kind];
-    const top = Math.round(y) - 14 + bob - lift;
-    if (c.state === 'leave' && !c.vert) {                    // walking home along the bar, facing left
-      ctx.save(); ctx.translate(Math.round(c.x) + 12, top); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0); ctx.restore();
-    } else ctx.drawImage(img, Math.round(c.x), top);
+    const top = y - 14 + bob - lift;
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(c.x + 6, y + 1.6, 5, 1.2, 0, 0, TAU); ctx.fill();
+    if (c.state === 'leave' && !c.vert) { ctx.save(); ctx.translate(c.x + 12, top); ctx.scale(-1, 1); blit(img, 0, 0); ctx.restore(); }
+    else blit(img, c.x, top);
     if (c.state === 'drink') drawMug(c.x + 7, y - 13, 0.6, false);
     else if (c.state === 'pushed') drawMug(c.x + 11, y - 7, 1, true);
     if (cheer) drawMug(c.x + 8, y - 26 - lift, 1, true);       // mug raised
     if (c.wants > 1 && c.state !== 'leave') {                // still has more than one to drink
-      const bx = Math.round(c.x) + 1, by = Math.round(y) - 26 - (c.vert ? 0 : 0);
-      ctx.fillStyle = theme.ink; ctx.fillRect(bx, by, 11, 9);
-      ctx.fillStyle = theme.bubble; ctx.fillRect(bx + 1, by + 1, 9, 7);
-      BG.drawText(ctx, 'X' + c.wants, bx + 2, by + 2, theme.ink, 1);
+      const bx = c.x + 0.5, by = y - 28;
+      rr(bx, by, 11, 8.6, 3.4); ctx.fillStyle = '#ffd36b'; ctx.fill(); outline(0.7);
+      ctx.beginPath(); ctx.moveTo(bx + 3, by + 8.4); ctx.lineTo(bx + 5, by + 11); ctx.lineTo(bx + 6.4, by + 8.4); ctx.fillStyle = '#ffd36b'; ctx.fill();
+      BG.drawText(ctx, 'X' + c.wants, bx + 5.5, by + 1.6, theme.ink, 1, 'center');
     }
   }
-
 
   // ---------- drawing the bonus events ----------
   const hash = k => Math.abs(Math.sin(k * 127.1 + Math.floor(clock * 12) * 311.7) * 43758.5453) % 1;
@@ -758,41 +804,51 @@
     if (t >= 0.8) {
       off = 0;
       if (d.variant === 'twirl') { flip = Math.floor(t * 6) % 2 === 1; off = -Math.abs(Math.sin(t * 6)) * 2; }
-      else if (d.variant === 'shimmy') { x += Math.floor(t * 12) % 2 ? 1 : -1; off = Math.floor(t * 6) % 2 ? -1 : 0; }
+      else if (d.variant === 'shimmy') { x += Math.sin(t * 38) * 0.9; off = -Math.abs(Math.sin(t * 6)) * 1.2; }
       else if (d.variant === 'bounce') off = -Math.abs(Math.sin(t * 5)) * 7;
       else { flip = Math.floor(t / 0.35) % 2 === 1; x += Math.sin(t * 4) * 10; off = -Math.abs(Math.sin(t * 8)) * 3; }
     }
     if (t >= wobbleAt) { const k = Math.min(1, (t - wobbleAt) / 1.1); ang = Math.sin(t * 18) * (0.12 + 0.25 * k); x += Math.sin(t * 18) * 2 * k; }
     if (t >= fallAt) { const p = (t - fallAt) / 0.7; off = p * p * 26; ang = p * 1.3; }
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x + 6, y + 3.4 + Math.max(0, off), 5, 1.2, 0, 0, TAU); ctx.fill();
     ctx.save();
-    ctx.translate(Math.round(x + 6), Math.round(y + 3 + off));
+    ctx.translate(x + 6, y + 3 + off);
     ctx.rotate(ang);
     if (flip) ctx.scale(-1, 1);
-    ctx.drawImage(sprites.customers[d.kindSprite], -6, -16);
+    blit(sprites.customers[d.kindSprite], -6, -16);
     ctx.restore();
     if (t >= 0.8 && t < wobbleAt) {                           // music notes over the dancer
-      ctx.fillStyle = '#ffd36b';
-      for (let k = 0; k < 2; k++) { const p = (clock * 0.9 + k * 0.5) % 1, nx = Math.round(x + 2 + k * 8 + Math.sin(p * 6) * 3), ny = Math.round(y - 20 - p * 12); ctx.fillRect(nx, ny, 2, 2); ctx.fillRect(nx + 1, ny - 4, 1, 4); }
+      for (let k = 0; k < 2; k++) {
+        const p = (clock * 0.9 + k * 0.5) % 1, nx = x + 2 + k * 8 + Math.sin(p * 6) * 3, ny = y - 20 - p * 12;
+        ctx.globalAlpha = 1 - p; disc(nx, ny, 1.2, '#ffd36b');
+        ctx.strokeStyle = '#ffd36b'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(nx + 1.1, ny); ctx.lineTo(nx + 1.1, ny - 4.5); ctx.stroke(); ctx.globalAlpha = 1;
+      }
     }
   }
 
   function drawBouncer(x, y, flip) {
-    ctx.save(); ctx.translate(Math.round(x), Math.round(y)); if (flip) { ctx.translate(14, 0); ctx.scale(-1, 1); }
-    ctx.fillStyle = theme.ink; ctx.fillRect(2, 0, 10, 8); ctx.fillRect(0, 8, 14, 13);
-    ctx.fillStyle = '#e0a074'; ctx.fillRect(3, 1, 8, 6);
-    ctx.fillStyle = theme.ink; ctx.fillRect(3, 3, 8, 2);
-    ctx.fillStyle = '#3a3a52'; ctx.fillRect(1, 9, 12, 11);
-    ctx.fillStyle = '#e63946'; ctx.fillRect(6, 9, 2, 6);
-    ctx.fillStyle = '#e0a074'; ctx.fillRect(-1, 11, 2, 4); ctx.fillRect(13, 11, 2, 4);
+    ctx.save(); ctx.translate(x, y); if (flip) { ctx.translate(14, 0); ctx.scale(-1, 1); }
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(7, 21, 7, 1.4, 0, 0, TAU); ctx.fill();
+    rr(-1.4, 10, 3.2, 6.2, 1.5); ctx.fillStyle = '#34344c'; ctx.fill(); outline(0.55); disc(0.2, 16.4, 1.4, '#e0a074');
+    rr(12, 10, 3.2, 6.2, 1.5); ctx.fillStyle = '#34344c'; ctx.fill(); outline(0.55); disc(13.8, 16.4, 1.4, '#e0a074');
+    rr(0.4, 8, 13.2, 13, 3); ctx.fillStyle = vg(8, 21, '#4a4a68', '#26263a'); ctx.fill(); outline(0.7);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(5, 8.4); ctx.lineTo(9, 8.4); ctx.lineTo(7, 13); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(6.2, 9); ctx.lineTo(7.8, 9); ctx.lineTo(8, 15); ctx.lineTo(7, 16); ctx.lineTo(6, 15); ctx.closePath(); ctx.fillStyle = '#e63946'; ctx.fill();
+    ctx.beginPath(); ctx.arc(7, 4.4, 4, 0, TAU); ctx.fillStyle = vg(0, 8, '#f0b88c', '#d99a6c'); ctx.fill(); outline(0.7);
+    rr(2.6, 3, 8.8, 2.3, 1.1); ctx.fillStyle = theme.ink; ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(3.6, 3.4, 2, 0.5);
+    rr(4.2, 7, 5.6, 0.9, 0.45); ctx.fillStyle = '#7a3a2a'; ctx.fill();
     ctx.restore();
   }
 
-  function drawDust(cx, cy) {
-    for (let k = 0; k < 6; k++) {
-      const dx = Math.round((hash(k + 1) - 0.5) * 18), dy = Math.round((hash(k + 9) - 0.5) * 10);
-      ctx.fillStyle = k % 3 ? '#e8e2cc' : '#b9b2a0'; ctx.fillRect(cx + dx - 3, cy + dy - 2, 6, 4);
+  function drawDust(cx, cy) {                                  // a scuffle cloud with stars
+    for (let k = 0; k < 7; k++) {
+      const dx = (hash(k + 1) - 0.5) * 20, dy = (hash(k + 9) - 0.5) * 9, r = 2.4 + hash(k + 15) * 2.2;
+      disc(cx + dx, cy + dy, r, k % 3 ? 'rgba(240,235,220,0.92)' : 'rgba(190,184,166,0.9)');
     }
-    ctx.fillStyle = '#ffd36b'; ctx.fillRect(cx + Math.round((hash(20) - 0.5) * 16), cy - 8 - Math.round(hash(21) * 4), 2, 2);
+    ctx.strokeStyle = '#ffd36b'; ctx.lineWidth = 0.8;
+    const sx = cx + (hash(20) - 0.5) * 16, sy = cy - 8 - hash(21) * 4;
+    ctx.beginPath(); ctx.moveTo(sx - 2, sy); ctx.lineTo(sx + 2, sy); ctx.moveTo(sx, sy - 2); ctx.lineTo(sx, sy + 2); ctx.stroke();
   }
 
   function drawFight(i) {
@@ -801,17 +857,17 @@
     const away = Math.max(0, t - 6.0) * 80;
     const cx = f.x - away;
     const a = sprites.customers[f.k1], b = sprites.customers[f.k2];
-    const flipDraw = (img, x, yy, flip) => { ctx.save(); ctx.translate(Math.round(x) + (flip ? 12 : 0), yy); if (flip) ctx.scale(-1, 1); ctx.drawImage(img, 0, 0); ctx.restore(); };
+    const flipDraw = (img, x, yy, flip) => { ctx.save(); ctx.translate(x + (flip ? 12 : 0), yy); if (flip) ctx.scale(-1, 1); blit(img, 0, 0); ctx.restore(); };
     if (t >= 6.0) {                                           // carried out, feet off the floor, with the bouncer behind
       flipDraw(a, cx - 8, y - 16, false); flipDraw(b, cx + 4, y - 16, true);
       drawBouncer(cx + 18, y - 18, true);
     } else {
       let ax = cx - 7, bx = cx + 7, ay = y - 14, by = y - 14;
-      if (f.variant === 'wrestle') { const sw = Math.floor(t / 0.3) % 2; ax = cx - 4 + sw * 8; bx = cx + 4 - sw * 8; ay += 3; by += 3; }
+      if (f.variant === 'wrestle') { const sw = Math.sin(t * 10); ax = cx - 4 + sw * 4; bx = cx + 4 - sw * 4; ay += 3 + Math.abs(sw); by += 3 + Math.abs(sw); }
       else if (f.variant === 'shove') { const s = Math.sin(t * 5) * 6; ax = cx - 8 + s; bx = cx + 8 + s; }
-      else { ax += Math.round((hash(3) - 0.5) * 2); bx += Math.round((hash(4) - 0.5) * 2); }
+      else { ax += (hash(3) - 0.5) * 2; bx += (hash(4) - 0.5) * 2; }
       flipDraw(a, ax, ay, false); flipDraw(b, bx, by, true);
-      if (f.variant === 'brawl' || t < 0.6) drawDust(Math.round(cx + 6), y - 8);
+      if (f.variant === 'brawl' || t < 0.6) drawDust(cx + 6, y - 8);
       if (t >= 5.2) drawBouncer(Math.min(cx - 16, -20 + (t - 5.2) / 0.8 * (cx + 4)), y - 18, false);   // the bouncer strides in from the door
     }
   }
@@ -820,88 +876,99 @@
     const h = ev, y = lanesY[i];
     const slide = Math.min(1, h.t / 0.8, Math.max(0, (h.dur - h.t) / 0.8));
     const hx = (i === bt.lane ? 244 : 270) + (1 - slide) * 44;
-    ctx.save(); ctx.translate(Math.round(hx) + 12, y - 6 - (Math.floor(clock * 8) % 2 && slide < 1 ? 1 : 0)); ctx.scale(-1, 1);
-    ctx.drawImage(sprites.customers[h.variant.kind], 0, 0); ctx.restore();
-    ctx.fillStyle = '#fff8e6'; ctx.fillRect(Math.round(hx) + 3, y + 5, 6, 5);        // apron
-    ctx.fillStyle = theme.ink; ctx.fillRect(Math.round(hx) + 3, y + 5, 6, 1);
+    ctx.save(); ctx.translate(hx + 12, y - 6 - (slide < 1 ? Math.abs(Math.sin(clock * 12)) : 0)); ctx.scale(-1, 1);
+    blit(sprites.customers[h.variant.kind], 0, 0); ctx.restore();
+    rr(hx + 2.6, y + 4.4, 6.6, 5.6, 1.3); ctx.fillStyle = '#fff8e6'; ctx.fill(); outline(0.45);        // apron
   }
 
   function drawParty() {                                      // streamers and a banner
-    ctx.fillStyle = '#ff5fa2'; ctx.fillRect(40, 30, 240, 1);
-    for (let k = 0; k < 12; k++) { ctx.fillStyle = ['#ffd36b', '#7fc8ff', '#b6e34a', '#ff5fa2'][k % 4]; ctx.fillRect(46 + k * 20, 31, 4, 3 + (k % 3)); }
-    if (Math.floor(clock * 3) % 2) BG.drawText(ctx, ev.variant === 'toast' ? 'CHEERS!' : 'PARTY TIME', W / 2, 36, '#ffd36b', 1, 'center', theme.ink);
+    for (let k = 0; k < 6; k++) {
+      const x0 = 40 + k * 40, x1 = x0 + 40;
+      ctx.strokeStyle = '#ff5fa2'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(x0, 30); ctx.quadraticCurveTo((x0 + x1) / 2, 37, x1, 30); ctx.stroke();
+      for (let j = 1; j < 4; j++) {
+        const u = j / 4, fx = x0 + 40 * u, fy = 30 + 14 * u * (1 - u) * 1.0 * 2;
+        ctx.beginPath(); ctx.moveTo(fx - 2, fy); ctx.lineTo(fx + 2, fy); ctx.lineTo(fx, fy + 4.5); ctx.closePath();
+        ctx.fillStyle = ['#ffd36b', '#7fc8ff', '#b6e34a', '#ff5fa2'][(k + j) % 4]; ctx.fill();
+      }
+    }
+    if (Math.floor(clock * 3) % 2) BG.drawText(ctx, ev.variant === 'toast' ? 'CHEERS!' : 'PARTY TIME', W / 2, 40, '#ffd36b', 1, 'center', theme.ink);
   }
 
   function drawBartender(i) {
     const y = lanesY[i];
     const facingTap = (bt.holding || bt.fill > 0) && bt.throwT <= 0 && state === 'play';
-    const sx = bt.shake > 0 ? (Math.floor(bt.shake * 30) % 2 ? 1 : -1) : 0;
+    const sx = bt.shake > 0 ? Math.sin(bt.shake * 90) * 1 : 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(286 + sx, y + 14, 7, 1.6, 0, 0, TAU); ctx.fill();
     if (facingTap) {
-      ctx.drawImage(sprites.btRight, 280 + sx, y - 6);
+      blit(sprites.btRight, 280 + sx, y - 6);
       drawMug(TAP_X - 1, y - 3, bt.fill, false);
     } else {
-      ctx.drawImage(sprites.btLeft, 272 + sx, y - 6);
+      blit(sprites.btLeft, 272 + sx, y - 6);
     }
   }
 
   function drawBubble(text, x, y, alpha) {
-    const w = BG.textWidth(text, 1) + 6;
-    const bx = Math.round(Math.max(2, Math.min(W - w - 2, x - w / 2))), by = Math.round(y);
+    const w = BG.textWidth(text, 1) + 8;
+    const bx = Math.max(2, Math.min(W - w - 2, x - w / 2)), by = y;
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = theme.ink; ctx.fillRect(bx - 1, by - 1, w + 2, 11);
-    ctx.fillStyle = theme.bubble; ctx.fillRect(bx, by, w, 9);
-    BG.drawText(ctx, text, bx + 3, by + 2, theme.ink, 1);
+    rr(bx, by, w, 10.5, 4); ctx.fillStyle = theme.bubble; ctx.fill(); outline(0.7);
+    const tx = Math.max(bx + 5, Math.min(bx + w - 5, x));
+    ctx.beginPath(); ctx.moveTo(tx - 2, by + 10.3); ctx.lineTo(tx + 0.6, by + 13.4); ctx.lineTo(tx + 2, by + 10.3); ctx.fillStyle = theme.bubble; ctx.fill();
+    BG.drawText(ctx, text, bx + w / 2, by + 2.6, theme.ink, 1, 'center');
     ctx.globalAlpha = 1;
   }
 
   function drawHud() {
-    BG.drawText(ctx, 'SCORE ' + String(score).padStart(6, '0'), 4, 4, theme.hud, 1, 'left', theme.hudShadow);
-    BG.drawText(ctx, round ? round.shift.name : 'MORNING', 4, 12, theme.hud, 1, 'left', theme.hudShadow);
-    BG.drawText(ctx, 'BEST ' + String(best).padStart(6, '0'), W - 4, 4, theme.hud, 1, 'right', theme.hudShadow);
+    rr(2, 2, 74, 19, 5); ctx.fillStyle = theme.dim; ctx.fill();
+    BG.drawText(ctx, 'SCORE ' + String(score).padStart(6, '0'), 7, 4.6, theme.hud, 1, 'left', theme.hudShadow);
+    BG.drawText(ctx, round ? round.shift.name : 'MORNING', 7, 12.6, theme.hud, 1, 'left', theme.hudShadow);
+    rr(W - 76, 2, 74, 19, 5); ctx.fillStyle = theme.dim; ctx.fill();
+    BG.drawText(ctx, 'BEST ' + String(best).padStart(6, '0'), W - 7, 4.6, theme.hud, 1, 'right', theme.hudShadow);
     for (let i = 0; i < cfg.glasses; i++) {
-      const x = W - 12 - i * 10, y = 12;
-      if (i < lives) drawMug(x, y + 1, 1, true);
-      else { ctx.fillStyle = theme.hudShadow; ctx.fillRect(x, y + 4, 6, 2); ctx.fillStyle = '#bfe3ea'; ctx.fillRect(x + 1, y + 4, 2, 1); ctx.fillRect(x + 4, y + 5, 1, 1); }
+      const x = W - 14 - i * 10, y = 12;
+      if (i < lives) drawMug(x, y + 0.5, 1, true);
+      else { ctx.globalAlpha = 0.4; drawMug(x, y + 0.5, 0, false); ctx.globalAlpha = 1; }
     }
   }
 
   function drawSign() {
     const flick = Math.sin(clock * 13) > 0.97 || (Math.floor(clock * 2) % 17 === 0 && Math.sin(clock * 40) > 0);
     const col = flick ? theme.neonDim : theme.neon;
-    if (!flick) {
-      const beat = BG.sound.pulse ? BG.sound.pulse() : 0;
-      ctx.fillStyle = theme.neonGlow; ctx.fillRect(100, 2, 120, 22);
-      if (beat > 0) { ctx.globalAlpha = beat * 0.8; ctx.fillRect(96, 0, 136, 26); ctx.globalAlpha = 1; }
-    }
-    ctx.fillStyle = theme.ink; ctx.fillRect(102, 4, 116, 18);
-    ctx.fillStyle = col; ctx.fillRect(102, 4, 116, 1); ctx.fillRect(102, 21, 116, 1); ctx.fillRect(102, 4, 1, 18); ctx.fillRect(217, 4, 1, 18);
-    BG.drawText(ctx, 'OLE BAR GLIDE', 160, 8, col, 2, 'center');
-    // A tiny neon mug beside the words.
-    ctx.fillStyle = flick ? theme.neonDim : '#f2b134';
-    ctx.fillRect(222, 9, 5, 8); ctx.fillRect(227, 11, 2, 4);
-    ctx.fillStyle = '#fff8e6'; ctx.fillRect(221, 7, 7, 2);
+    const beat = BG.sound.pulse ? BG.sound.pulse() : 0;
+    if (!flick) soft(160, 14, 78 + beat * 14, theme.neonGlow);
+    rr(101, 3.5, 118, 19, 5); ctx.fillStyle = vg(3, 23, '#2a1830', theme.ink); ctx.fill();
+    if (theme === BG.THEMES.pastel) { ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill(); }
+    ctx.save();
+    if (!flick) { ctx.shadowColor = col; ctx.shadowBlur = (6 + beat * 6) * S; }
+    ctx.strokeStyle = col; ctx.lineWidth = 1.1; rr(101, 3.5, 118, 19, 5); ctx.stroke();
+    BG.drawText(ctx, 'OLE BAR GLIDE', 160, 6.6, col, 2, 'center');
+    ctx.restore();
+    ctx.globalAlpha = flick ? 0.4 : 1; drawMug(222.5, 7, 1, true); ctx.globalAlpha = 1;
   }
 
   function draw() {
-    ctx.drawImage(bg, 0, 0);
+    ctx.setTransform(S, 0, 0, S, 0, 0);
+    ctx.drawImage(bg, 0, 0, W, H);
     drawSign();
     const bossLane = boss ? boss.lane : -1;
     for (let i = 0; i < lanesY.length; i++) {
       const y = lanesY[i];
       customers.filter(c => c.lane === i && !c.vert).forEach(drawCustomer);
       if (ev && ev.kind === 'fight' && ev.lane === i) drawFight(i);
-      ctx.drawImage(barImg, BAR_X0 - 2, y);
+      ctx.drawImage(barImg, BAR_X0 - 2, y, barImg.lw, barImg.lh);
+      ctx.fillStyle = vg(y + 16, y + 23, 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)'); ctx.fillRect(BAR_X0 - 1, y + 16, BAR_X1 - BAR_X0 + 2, 7);
       mugs.filter(m => m.lane === i).forEach(m => {
-        const wob = m.teeter !== undefined ? (Math.floor(clock * 40) % 2 ? 1 : -1) : 0;
+        const wob = m.teeter !== undefined ? Math.sin(clock * 90) * 0.7 : 0;
+        if (m.full) { ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(m.x + 3, y + 0.8, 4, 0.9, 0, 0, TAU); ctx.fill(); }
         drawMug(m.x + wob, y - 7 - (wob > 0 ? 1 : 0), m.full ? 1 : 0, m.full);
-        if (m.teeter !== undefined) BG.drawText(ctx, '!', m.x + 2, y - 16, '#ff5fa2', 1, 'left', theme.ink);
+        if (m.teeter !== undefined) BG.drawText(ctx, '!', m.x + 3, y - 17, '#ff5fa2', 1, 'center', theme.ink);
       });
       tips.filter(t => t.lane === i && (t.t > 2 || Math.floor(t.t * 6) % 2)).forEach(t => drawCoin(t.x, y - 4));
       if (ev && ev.kind === 'dancer' && ev.lane === i) drawDancer(i);
       if (ev && ev.kind === 'helper' && ev.lanes.indexOf(i) >= 0) drawHelper(i);
       drawTap(i, state === 'play' && bt.lane === i && bt.holding && bt.fill < 1);
       if (i === bossLane) drawBossScene(i);
-      else if (dash && dash.lane === i) ctx.drawImage(dash.back ? sprites.btRight : sprites.btLeft, Math.round(dash.x), y - 6 - (Math.floor(clock * 12) % 2));
+      else if (dash && dash.lane === i) blit(dash.back ? sprites.btRight : sprites.btLeft, dash.x, y - 6 - Math.abs(Math.sin(clock * 12)));
       else if (i === bt.lane && state !== 'title' && state !== 'bonus' && !(boss && boss.t >= 1.9)) drawBartender(i);
       if (oops && oops.lane === i && oops.glass) {
         const g = oops.glass;
@@ -910,15 +977,15 @@
     }
     drawDoor();
     customers.filter(c => c.vert).forEach(drawCustomer);
-    if (state === 'title') ctx.drawImage(sprites.btLeft, 272, lanesY[bt.lane] - 6);
+    if (state === 'title') blit(sprites.btLeft, 272, lanesY[bt.lane] - 6);
     if (ev && ev.kind === 'celebration') drawParty();
     if (show > 0) drawShow();
     if (state === 'bonus') drawBonus();
-    parts.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1); });
+    parts.forEach(p => { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 0.75, 0, TAU); ctx.fill(); });
     // Beer puddle under a broken glass.
     if (oops && oops.glass && oops.glass.broken) {
-      ctx.fillStyle = '#f2b134'; ctx.fillRect(Math.round(oops.glass.x) - 6, 184, 13, 2);
-      ctx.fillStyle = '#fff8e6'; ctx.fillRect(Math.round(oops.glass.x) - 2, 184, 3, 1);
+      ctx.fillStyle = 'rgba(242,177,52,0.9)'; ctx.beginPath(); ctx.ellipse(oops.glass.x, 184.6, 7, 1.5, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,248,230,0.8)'; ctx.beginPath(); ctx.ellipse(oops.glass.x - 1, 184.2, 2.4, 0.6, 0, 0, TAU); ctx.fill();
     }
     if (oops) drawBubble('UH-OH!', 278, lanesY[bt.lane] - 22, 1);
     pops.forEach(p => {
@@ -934,26 +1001,24 @@
   }
 
   function drawCoin(x, y) {
-    ctx.fillStyle = theme.ink; ctx.fillRect(x - 1, y - 1, 7, 6);
-    ctx.fillStyle = '#ffd36b'; ctx.fillRect(x, y, 5, 4);
-    ctx.fillStyle = '#fff8e6'; ctx.fillRect(x + 1, y, 1, 1);
-    if (Math.floor(clock * 4) % 2) { ctx.fillStyle = '#fff8e6'; ctx.fillRect(x + 6, y - 3, 1, 1); }
+    const cx = x + 2.5, cy = y + 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.beginPath(); ctx.ellipse(cx, cy + 3.2, 3, 0.8, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 3.1, 0, TAU); ctx.fillStyle = vg(cy - 3, cy + 3, '#fff0a0', '#e8a82a'); ctx.fill(); outline(0.6);
+    ctx.beginPath(); ctx.arc(cx, cy, 1.9, 0, TAU); ctx.strokeStyle = 'rgba(160,100,10,0.55)'; ctx.lineWidth = 0.4; ctx.stroke();
+    if (Math.floor(clock * 4) % 2) { ctx.strokeStyle = '#fff8e6'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(cx + 4, cy - 4.4); ctx.lineTo(cx + 4, cy - 1.8); ctx.moveTo(cx + 2.7, cy - 3.1); ctx.lineTo(cx + 5.3, cy - 3.1); ctx.stroke(); }
   }
   // Show time: coloured spotlights sweep the room while everyone watches.
   function drawShow() {
-    const cols = ['rgba(255, 95, 162, 0.22)', 'rgba(127, 200, 255, 0.22)', 'rgba(182, 227, 74, 0.2)'];
+    const cols = ['rgba(255, 95, 162, 0.26)', 'rgba(127, 200, 255, 0.26)', 'rgba(182, 227, 74, 0.24)'];
     cols.forEach((c, k) => {
       const x = 160 + Math.sin(clock * (2.2 + k * 0.7) + k * 2) * 120, y = 110 + Math.cos(clock * (1.7 + k * 0.5) + k) * 50;
-      const g = ctx.createRadialGradient(x, y, 4, x, y, 46);
-      g.addColorStop(0, c); g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g; ctx.fillRect(x - 46, y - 46, 92, 92);
+      soft(x, y, 48, c);
     });
-    if (Math.floor(clock * 4) % 2) BG.drawText(ctx, 'SHOW TIME', W / 2, 28, '#ffd36b', 2, 'center', theme.ink);
-    // Music notes float up from the jukebox corner.
-    ctx.fillStyle = '#ffd36b';
-    for (let k = 0; k < 4; k++) {
+    if (Math.floor(clock * 4) % 2) BG.drawText(ctx, 'SHOW TIME', W / 2, 26, '#ffd36b', 2, 'center', theme.ink);
+    for (let k = 0; k < 4; k++) {                             // music notes float up from the jukebox corner
       const p = (clock * 0.6 + k / 4) % 1, nx = 44 + k * 60 + Math.sin(p * 6 + k) * 6, ny = 180 - p * 140;
-      ctx.fillRect(Math.round(nx), Math.round(ny), 2, 2); ctx.fillRect(Math.round(nx) + 1, Math.round(ny) - 5, 1, 5);
+      ctx.globalAlpha = Math.min(1, (1 - p) * 2); disc(nx, ny, 1.4, '#ffd36b');
+      ctx.strokeStyle = '#ffd36b'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.moveTo(nx + 1.3, ny); ctx.lineTo(nx + 1.3, ny - 5); ctx.stroke(); ctx.globalAlpha = 1;
     }
   }
 
@@ -963,35 +1028,37 @@
     if (T < 1.9) {
       // The bartender waits, shaking; the owner stomps in.
       const lift = T > 1.2 ? Math.min(6, (T - 1.2) * 20) : 0;
-      const sx = Math.floor(T * 30) % 2 ? 1 : -1;
-      ctx.drawImage(sprites.btLeft, 272 + sx - (T > 1.2 ? (T - 1.2) / 0.7 * 30 : 0), y - 6 - lift);
-      ctx.drawImage(sprites.boss, Math.round(b.x), y - 8);
+      const sx = Math.sin(T * 90);
+      blit(sprites.btLeft, 272 + sx - (T > 1.2 ? (T - 1.2) / 0.7 * 30 : 0), y - 6 - lift);
+      blit(sprites.boss, b.x, y - 8);
       if (T < 1.2) drawBubble('?!', 278, y - 20, 1);
     } else {
       // Bent over the bar.
       const wobble = cfg.ending === 'spank' && (T - 2.1) % 0.55 < 0.1 ? 1 : 0;
-      ctx.drawImage(sprites.btBent, 232, y - 12 + wobble);
-      ctx.drawImage(sprites.boss, Math.round(b.x), y - 8);
+      blit(sprites.btBent, 232, y - 12 + wobble);
+      blit(sprites.boss, b.x, y - 8);
       if (T < 5.6) {
         const phase = ((T - 2.1) % 0.55) / 0.55;
         if (cfg.ending === 'spank') {
           const up = T < 2.1 ? 1 : (phase < 0.15 ? 0 : Math.min(1, (phase - 0.15) * 2));
-          const hy = y - 14 - Math.round(up * 16);
-          ctx.fillStyle = theme.ink; ctx.fillRect(254, hy + 2, Math.max(2, b.x - 252), 2);
-          ctx.drawImage(sprites.hand, 247, hy);
+          const hy = y - 14 - up * 16;
+          rr(254, hy + 1.6, Math.max(2, b.x - 252), 2.6, 1.3); ctx.fillStyle = '#4a3262'; ctx.fill(); outline(0.5);
+          blit(sprites.hand, 247, hy);
         } else {
           const wag = Math.sin(T * 14) > 0 ? 1 : -1;
-          ctx.fillStyle = theme.ink; ctx.fillRect(250, y - 30, 12, 2);
-          ctx.drawImage(sprites.hand, 244 + wag, y - 33);
-          ctx.fillStyle = '#e0786a'; ctx.fillRect(245 + wag, y - 39, 2, 6);
+          rr(250, y - 31, 12, 2.6, 1.3); ctx.fillStyle = '#4a3262'; ctx.fill(); outline(0.5);
+          blit(sprites.hand, 244 + wag, y - 33);
+          rr(245 + wag, y - 40, 2.4, 7, 1.2); ctx.fillStyle = '#e0786a'; ctx.fill(); outline(0.45);
         }
       }
     }
   }
 
   function banner(a, b) {
-    ctx.fillStyle = theme.dim; ctx.fillRect(0, 78, W, 40);
-    BG.drawText(ctx, a, W / 2, 84, theme.hud, 3, 'center', theme.hudShadow);
+    ctx.fillStyle = vg(76, 120, 'rgba(0,0,0,0)', 'rgba(0,0,0,0)');
+    rr(0, 78, W, 40, 0); ctx.fillStyle = theme.dim; ctx.fill();
+    ctx.fillStyle = theme.rail; ctx.fillRect(0, 78, W, 0.7); ctx.fillRect(0, 117.3, W, 0.7);
+    BG.drawText(ctx, a, W / 2, 83, theme.hud, 3, 'center', theme.hudShadow);
     BG.drawText(ctx, b, W / 2, 104, theme.hud, 1, 'center', theme.hudShadow);
   }
 
