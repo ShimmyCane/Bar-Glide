@@ -2,8 +2,9 @@
  * Publishable key only: safe in browser code, protected by row-level security.
  * Never put a service-role or secret key in this file or anywhere in the repo. */
 window.BG = window.BG || {};
-window.BG.VERSION = '0.5.0';
+window.BG.VERSION = '0.6.0';
 window.BG.CHANGES = [
+  '0.6.0 · Back to pixel art, but richer: shaded people (light and dark edges, hat bands, buttons, belts), a glossy panelled bar with a brass rail and soft shadow, louvred saloon doors, a carpeted walkway with diamonds, stepped lamp light, shaded bottles and shelves, glassy mugs with foam and a shiny coin. Bonus round: a clean stage with the three mugs evenly spaced (56 apart), the coin centred under its glass and the counter centred under all three.',
   '0.5.0 · Modern look: smooth vector people, glass mugs with foam, a polished panelled bar, glowing lamps and neon, a carpeted walkway, soft shadows and rounded labels. Bonus events now start at Lunch; guests escorted out of a fight do not count towards the shift. The pixel original is kept as Version 1 (⚙️ → Pages).',
   '0.4.0 · One saloon door: guests step in, walk down to a bar and only take a drink once they are at it. X2 fixed: a guest finishes one beer, hands back the empty, loses the X2 and comes for the next, then leaves. Bonus events: drunk dancer, bar fight with a bouncer, celebration, a helper on a break (⚙️ slider Off to Lots). New ⚙️ slider for how fast empties come back.',
   '0.3.0 · Renamed Ole Bar Glide. A day of shifts: Morning (2 slow bars, 30 easy seconds), Lunch rush, Afternoon (3 bars), Dinner rush (4 bars), Night, then faster nights. Some customers order two (X2). An empty mug wobbles on the edge for a quarter second before it falls, and is caught a tenth of a second early. 🎛️ Sound lab page in ⚙️ → Pages.',
